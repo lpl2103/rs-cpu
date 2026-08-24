@@ -1,4 +1,4 @@
-//! Modern CPU-Z Application Entrypoint.
+//! M-CPU Application Entrypoint.
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
@@ -15,19 +15,22 @@ fn main() -> eframe::Result {
         .with(tracing_subscriber::fmt::layer().with_target(false))
         .init();
 
-    tracing::info!("Starting Modern CPU-Z v0.1.0...");
+    tracing::info!("Iniciando M-CPU v0.1.0...");
+
+    let app_icon = modern_cpu_z::ui::create_app_icon();
 
     let native_options = eframe::NativeOptions {
         viewport: eframe::egui::ViewportBuilder::default()
-            .with_title("Modern CPU-Z")
-            .with_inner_size([820.0, 750.0])
-            .with_min_inner_size([680.0, 560.0])
+            .with_title("M-CPU")
+            .with_icon(app_icon)
+            .with_inner_size([1040.0, 880.0])
+            .with_min_inner_size([880.0, 640.0])
             .with_active(true),
         ..Default::default()
     };
 
     eframe::run_native(
-        "Modern CPU-Z",
+        "M-CPU",
         native_options,
         Box::new(|cc| Ok(Box::new(ModernCpuZApp::new(cc)))),
     )
