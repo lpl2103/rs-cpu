@@ -8,6 +8,7 @@ use crate::ui::{
     AboutTabState, GraphicsTabState, MemoryTabState,
 };
 use eframe::egui::{self, Button, CentralPanel, Color32, CornerRadius, RichText, TopBottomPanel};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 /// Active navigation tab.
@@ -29,7 +30,7 @@ pub enum ActiveTab {
     About,
 }
 
-/// Main Application state for Modern CPU-Z.
+/// Main Application state for M-CPU.
 pub struct ModernCpuZApp {
     /// Hardware telemetry and introspection engine.
     pub engine: HardwareEngine,
@@ -50,10 +51,66 @@ pub struct ModernCpuZApp {
 }
 
 impl ModernCpuZApp {
-    /// Creates and initializes the application.
+    /// Creates and initializes the application with Segoe UI typography and hardware engine.
     #[must_use]
-    pub fn new(_cc: &eframe::CreationContext<'_>) -> Self {
-        tracing::info!("Initializing Hardware Introspection Engine...");
+    pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
+        tracing::info!("Initializing M-CPU Hardware Engine & Typography...");
+
+        // Load and apply Segoe UI font
+        let mut fonts = egui::FontDefinitions::default();
+        let mut font_loaded = false;
+
+        #[cfg(target_os = "windows")]
+        {
+            if let Ok(font_data) = std::fs::read("C:\\Windows\\Fonts\\segoeui.ttf") {
+                fonts.font_data.insert(
+                    "segoe_ui".to_owned(),
+                    Arc::new(egui::FontData::from_owned(font_data)),
+                );
+                fonts
+                    .families
+                    .entry(egui::FontFamily::Proportional)
+                    .or_default()
+                    .insert(0, "segoe_ui".to_owned());
+                font_loaded = true;
+            }
+
+            if let Ok(bold_data) = std::fs::read("C:\\Windows\\Fonts\\segoeuib.ttf") {
+                fonts.font_data.insert(
+                    "segoe_ui_bold".to_owned(),
+                    Arc::new(egui::FontData::from_owned(bold_data)),
+                );
+            }
+        }
+
+        #[cfg(target_os = "linux")]
+        {
+            // Standard Linux font paths
+            let linux_paths = [
+                "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+                "/usr/share/fonts/TTF/DejaVuSans.ttf",
+            ];
+            for path in linux_paths {
+                if let Ok(font_data) = std::fs::read(path) {
+                    fonts.font_data.insert(
+                        "system_font".to_owned(),
+                        Arc::new(egui::FontData::from_owned(font_data)),
+                    );
+                    fonts
+                        .families
+                        .entry(egui::FontFamily::Proportional)
+                        .or_default()
+                        .insert(0, "system_font".to_owned());
+                    font_loaded = true;
+                    break;
+                }
+            }
+        }
+
+        if font_loaded {
+            cc.egui_ctx.set_fonts(fonts);
+        }
+
         let engine = HardwareEngine::new();
         let bench = BenchManager::default();
 
@@ -87,56 +144,56 @@ impl eframe::App for ModernCpuZApp {
                 egui::Frame::new()
                     .fill(self.theme.card_bg())
                     .stroke(egui::Stroke::new(1.0_f32, self.theme.card_border()))
-                    .inner_margin(egui::Margin::symmetric(12, 8)),
+                    .inner_margin(egui::Margin::symmetric(14, 10)),
             )
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
                     // Logo / Title
                     ui.label(
-                        RichText::new("⚡ CPU-Z")
-                            .size(16.0)
+                        RichText::new("⚡ M-CPU")
+                            .size(18.0)
                             .color(self.theme.accent_primary())
                             .strong(),
                     );
-                    ui.add_space(8.0);
+                    ui.add_space(10.0);
                     ui.separator();
                     ui.add_space(8.0);
 
-                    // Tab Navigation Buttons
+                    // Tab Navigation Buttons (PT-BR)
                     let tabs = [
-                        (ActiveTab::Unified, "🖥️ Overview"),
-                        (ActiveTab::Cpu, "🔲 CPU"),
-                        (ActiveTab::Mainboard, "🖧 Mainboard"),
-                        (ActiveTab::Memory, "💾 Memory & SPD"),
-                        (ActiveTab::Graphics, "🎮 Graphics"),
-                        (ActiveTab::Bench, "📊 Bench"),
-                        (ActiveTab::About, "ℹ️ About"),
+                        (ActiveTab::Unified, "🖥️ Visão Geral"),
+                        (ActiveTab::Cpu, "🔲 Processador"),
+                        (ActiveTab::Mainboard, "🖧 Placa-Mãe"),
+                        (ActiveTab::Memory, "💾 Memória & SPD"),
+                        (ActiveTab::Graphics, "🎮 Gráficos"),
+                        (ActiveTab::Bench, "📊 Benchmark"),
+                        (ActiveTab::About, "ℹ️ Sobre"),
                     ];
 
                     for (tab, label) in tabs {
                         let is_active = self.active_tab == tab;
                         let text = if is_active {
                             RichText::new(label)
-                                .size(12.5)
+                                .size(13.5)
                                 .color(self.theme.accent_primary())
                                 .strong()
                         } else {
                             RichText::new(label)
-                                .size(12.5)
+                                .size(13.5)
                                 .color(self.theme.text_secondary())
                         };
 
                         let btn = Button::new(text)
                             .fill(if is_active {
                                 match self.theme {
-                                    AppTheme::Dark => Color32::from_rgb(30, 40, 56),
-                                    AppTheme::Light => Color32::from_rgb(225, 235, 250),
+                                    AppTheme::Dark => Color32::from_rgb(30, 42, 60),
+                                    AppTheme::Light => Color32::from_rgb(222, 235, 252),
                                 }
                             } else {
                                 Color32::TRANSPARENT
                             })
                             .corner_radius(CornerRadius::same(6))
-                            .min_size(egui::vec2(0.0, 24.0));
+                            .min_size(egui::vec2(0.0, 26.0));
 
                         if ui.add(btn).clicked() {
                             self.active_tab = tab;
@@ -146,21 +203,21 @@ impl eframe::App for ModernCpuZApp {
                     // Right-aligned controls (Theme Toggle and Manual Refresh)
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         let theme_icon = match self.theme {
-                            AppTheme::Dark => "☀️ Light",
-                            AppTheme::Light => "🌙 Dark",
+                            AppTheme::Dark => "☀️ Claro",
+                            AppTheme::Light => "🌙 Escuro",
                         };
 
                         if ui
-                            .button(RichText::new(theme_icon).size(12.0).color(self.theme.text_primary()))
-                            .on_hover_text("Toggle Light / Dark theme")
+                            .button(RichText::new(theme_icon).size(13.0).color(self.theme.text_primary()))
+                            .on_hover_text("Alternar entre Tema Claro e Escuro")
                             .clicked()
                         {
                             self.theme = self.theme.toggle();
                         }
 
                         if ui
-                            .button(RichText::new("🔄 Refresh").size(12.0).color(self.theme.text_primary()))
-                            .on_hover_text("Refresh all hardware telemetry now")
+                            .button(RichText::new("🔄 Atualizar").size(13.0).color(self.theme.text_primary()))
+                            .on_hover_text("Atualizar toda a telemetria de hardware agora")
                             .clicked()
                         {
                             self.engine.refresh_live_metrics();
@@ -174,7 +231,7 @@ impl eframe::App for ModernCpuZApp {
             .frame(
                 egui::Frame::new()
                     .fill(self.theme.bg_color())
-                    .inner_margin(egui::Margin::same(10)),
+                    .inner_margin(egui::Margin::same(12)),
             )
             .show(ctx, |ui| match self.active_tab {
                 ActiveTab::Unified => {
