@@ -1,0 +1,37 @@
+[package]
+name = "modern-cpu-z"
+version = "0.1.0"
+edition = "2021"
+authors = ["Leandro"]
+description = "Modern, high-performance hardware diagnostic and telemetry tool in Rust"
+readme = "README.md"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+# GUI Framework
+eframe = { version = "0.31", default-features = false, features = ["default", "glow", "wayland", "x11"] }
+
+# Hardware Introspection & Diagnostics
+raw-cpuid = "11.2"
+smbios-lib = "0.9"
+sysinfo = "0.33"
+
+# Concurrency & Math Benchmark Engine
+rayon = "1.10"
+
+# Structured Logging & Errors
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+thiserror = "2.0"
+
+# Serialization & Reports
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = true
