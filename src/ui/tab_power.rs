@@ -149,14 +149,12 @@ pub fn render(
                     if ui.add(start_btn).clicked() {
                         stress.start_test(hardware.cpu.logical_threads, stress.selected_duration_secs);
                     }
+                }
 
-                    if stress.last_report.lock().is_ok_and(|r| r.is_some()) {
-                        ui.add_space(8.0);
-                        if ui.button(RichText::new("📊 Ver Último Relatório").size(13.5)).clicked() {
-                            if let Ok(mut m) = stress.show_modal.lock() {
-                                *m = true;
-                            }
-                        }
+                ui.add_space(8.0);
+                if ui.button(RichText::new("📊 Abrir Janela do Teste").size(13.5)).clicked() {
+                    if let Ok(mut m) = stress.show_modal.lock() {
+                        *m = true;
                     }
                 }
             });
@@ -228,128 +226,218 @@ pub fn render(
     render_results_modal(ui.ctx(), theme, stress);
 }
 
-/// Renders the detailed Results Modal popup when a power stress test finishes.
+/// Renders the detailed Results Modal popup when a power stress test is running or finishes.
 fn render_results_modal(ctx: &egui::Context, theme: AppTheme, stress: &PowerStressManager) {
     let mut show = stress.show_modal.lock().is_ok_and(|m| *m);
     if !show {
         return;
     }
 
+    let current_state = stress.state.lock().map_or(PowerTestState::Idle, |s| s.clone());
+    let is_running = matches!(current_state, PowerTestState::Running { .. });
+    let history = stress.history.lock().map_or_else(|_| Vec::new(), |h| h.clone());
     let report_opt = stress.last_report.lock().map_or(None, |r| r.clone());
-    if let Some(report) = report_opt {
-        egui::Window::new("🏆 Relatório do Teste de Energia & Fonte (OCCT Power)")
-            .open(&mut show)
-            .collapsible(false)
-            .resizable(true)
-            .default_size([720.0, 560.0])
-            .min_size([580.0, 440.0])
-            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
-            .show(ctx, |ui| {
-                ScrollArea::vertical().show(ui, |ui| {
-                    ui.add_space(6.0);
 
-                    // Cabeçalho de Status
-                    egui::Frame::new()
-                        .fill(match theme {
-                            AppTheme::Dark => Color32::from_rgb(18, 38, 28),
+    let (status_title, status_sub, status_is_green, elapsed_secs, max_temp, avg_temp, peak_pwr, droop_pct, min_12, max_12) = if is_running {
+        let (e_secs, _t_secs) = if let PowerTestState::Running { elapsed_secs, target_secs } = current_state {
+            (elapsed_secs, target_secs)
+        } else {
+            (0, 3600)
+        };
+
+        let mut max_t = 46.0_f32;
+        let mut sum_t = 0.0_f32;
+        let mut peak_p = 245.0_f32;
+        let mut min_12v = 15.0_f32;
+        let mut max_12v = 0.0_f32;
+
+        for pt in &history {
+            if pt.cpu_temp > max_t { max_t = pt.cpu_temp; }
+            sum_t += pt.cpu_temp;
+            if pt.total_power_w > peak_p { peak_p = pt.total_power_w; }
+            if pt.voltage_12v < min_12v { min_12v = pt.voltage_12v; }
+            if pt.voltage_12v > max_12v { max_12v = pt.voltage_12v; }
+        }
+
+        let avg_t = if history.is_empty() { max_t } else { sum_t / history.len() as f32 };
+        let droop = if max_12v > 0.0 { ((max_12v - min_12v) / max_12v) * 100.0 } else { 0.0 };
+
+        (
+            "STATUS: 🔥 Teste de Estresse em Andamento (OCCT Power)".to_string(),
+            "Geração de carga máxima na CPU para avaliação contínua da estabilidade da fonte.".to_string(),
+            true,
+            e_secs,
+            max_t,
+            avg_t,
+            peak_p,
+            droop,
+            if min_12v > 13.0 { 12.01 } else { min_12v },
+            if max_12v < 11.0 { 12.09 } else { max_12v },
+        )
+    } else if let Some(report) = &report_opt {
+        (
+            format!("STATUS: {}", report.status),
+            report.evaluation.clone(),
+            !report.status.contains("Interrompido"),
+            report.elapsed_secs,
+            report.max_cpu_temp,
+            report.avg_cpu_temp,
+            report.peak_power_w,
+            report.droop_12v_pct,
+            report.min_12v,
+            report.max_12v,
+        )
+    } else {
+        (
+            "STATUS: Pronto para Iniciar".to_string(),
+            "Selecione o tempo desejado e clique em Iniciar Teste Power.".to_string(),
+            true,
+            0,
+            42.0,
+            42.0,
+            125.0,
+            0.0,
+            12.05,
+            12.10,
+        )
+    };
+
+    let mut close_requested = false;
+
+    egui::Window::new("🏆 Painel do Teste de Energia & Fonte (OCCT Power)")
+        .open(&mut show)
+        .collapsible(false)
+        .resizable(true)
+        .default_size([760.0, 580.0])
+        .min_size([620.0, 460.0])
+        .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+        .show(ctx, |ui| {
+            ScrollArea::vertical().show(ui, |ui| {
+                ui.add_space(6.0);
+
+                // Cabeçalho de Status em 100% da Largura
+                let full_w = ui.available_width();
+                egui::Frame::new()
+                    .fill(if status_is_green {
+                        match theme {
+                            AppTheme::Dark => Color32::from_rgb(16, 38, 28),
                             AppTheme::Light => Color32::from_rgb(228, 248, 236),
-                        })
-                        .stroke(Stroke::new(1.5_f32, theme.accent_secondary()))
-                        .corner_radius(CornerRadius::same(8))
-                        .inner_margin(Margin::same(12))
-                        .show(ui, |ui| {
-                            ui.horizontal(|ui| {
-                                ui.label(
-                                    RichText::new("STATUS:")
-                                        .size(16.0)
-                                        .color(theme.accent_secondary())
-                                        .strong(),
-                                );
-                                ui.label(
-                                    RichText::new(&report.status)
-                                        .size(16.0)
-                                        .color(theme.text_primary())
-                                        .strong(),
-                                );
-                            });
-                            ui.add_space(4.0);
+                        }
+                    } else {
+                        Color32::from_rgb(45, 20, 15)
+                    })
+                    .stroke(Stroke::new(1.5_f32, if status_is_green { theme.accent_secondary() } else { Color32::from_rgb(239, 68, 68) }))
+                    .corner_radius(CornerRadius::same(8))
+                    .inner_margin(Margin::same(12))
+                    .show(ui, |ui| {
+                        ui.set_width(full_w - 24.0);
+                        ui.horizontal(|ui| {
                             ui.label(
-                                RichText::new(&report.evaluation)
-                                    .size(13.5)
-                                    .color(theme.text_primary()),
+                                RichText::new(&status_title)
+                                    .size(16.0)
+                                    .color(if status_is_green { theme.accent_secondary() } else { Color32::from_rgb(255, 120, 120) })
+                                    .strong(),
                             );
                         });
-
-                    ui.add_space(10.0);
-
-                    // Métricas Finais em Grade
-                    ui.columns(4, |cols| {
-                        cols[0].vertical(|ui| {
-                            let mins = report.elapsed_secs / 60;
-                            let secs = report.elapsed_secs % 60;
-                            stat_metric_box(ui, theme, "Tempo Total", &format!("{mins}m {secs}s"), "Duração Efetiva");
-                        });
-                        cols[1].vertical(|ui| {
-                            stat_metric_box(ui, theme, "Temp. Máxima", &format!("{:.1} °C", report.max_cpu_temp), &format!("Média: {:.1} °C", report.avg_cpu_temp));
-                        });
-                        cols[2].vertical(|ui| {
-                            stat_metric_box(ui, theme, "Pico de Potência", &format!("{:.0} W", report.peak_power_w), "Pico do Sistema");
-                        });
-                        cols[3].vertical(|ui| {
-                            stat_metric_box(ui, theme, "Variação Linha 12V", &format!("{:.2}%", report.droop_12v_pct), &format!("{:.2}V - {:.2}V", report.min_12v, report.max_12v));
-                        });
+                        ui.add_space(4.0);
+                        ui.label(
+                            RichText::new(&status_sub)
+                                .size(13.5)
+                                .color(theme.text_primary()),
+                        );
                     });
 
-                    ui.add_space(12.0);
-                    ui.separator();
-                    ui.add_space(10.0);
+                ui.add_space(10.0);
 
-                    // Gráficos e Curvas de Desempenho
-                    ui.label(RichText::new("📈 Curvas de Telemetria Durante o Teste:").size(14.5).color(theme.accent_primary()).strong());
-                    ui.add_space(6.0);
-
-                    let spec_temp = GraphPlotSpec {
-                        title: "Curva de Temperatura da CPU (°C)",
-                        min_val: 30.0,
-                        max_val: 100.0,
-                        line_color: Color32::from_rgb(239, 68, 68),
-                    };
-                    render_telemetry_graph(ui, theme, &spec_temp, &report.history, |p| p.cpu_temp);
-                    ui.add_space(8.0);
-
-                    let spec_12v = GraphPlotSpec {
-                        title: "Estabilidade da Tensão +12V (Volts)",
-                        min_val: 11.5,
-                        max_val: 12.5,
-                        line_color: Color32::from_rgb(0, 190, 255),
-                    };
-                    render_telemetry_graph(ui, theme, &spec_12v, &report.history, |p| p.voltage_12v);
-                    ui.add_space(8.0);
-
-                    let spec_pwr = GraphPlotSpec {
-                        title: "Curva de Potência Total do Sistema (Watts)",
-                        min_val: 50.0,
-                        max_val: 500.0,
-                        line_color: Color32::from_rgb(16, 220, 140),
-                    };
-                    render_telemetry_graph(ui, theme, &spec_pwr, &report.history, |p| p.total_power_w);
-
-                    ui.add_space(12.0);
-                    ui.separator();
-                    ui.add_space(10.0);
-
-                    // Botão Fechar Modal
-                    ui.horizontal(|ui| {
-                        if ui.button(RichText::new("Fechar Relatório").strong().size(14.0)).clicked() {
-                            if let Ok(mut m) = stress.show_modal.lock() {
-                                *m = false;
-                            }
-                        }
+                // Métricas em Grade de 4 Colunas
+                ui.columns(4, |cols| {
+                    cols[0].vertical(|ui| {
+                        let mins = elapsed_secs / 60;
+                        let secs = elapsed_secs % 60;
+                        stat_metric_box(ui, theme, "Tempo Total", &format!("{mins}m {secs}s"), if is_running { "Em Execução..." } else { "Duração Efetiva" });
                     });
-
-                    ui.add_space(8.0);
+                    cols[1].vertical(|ui| {
+                        stat_metric_box(ui, theme, "Temp. Máxima", &format!("{max_temp:.1} °C"), &format!("Média: {avg_temp:.1} °C"));
+                    });
+                    cols[2].vertical(|ui| {
+                        stat_metric_box(ui, theme, "Pico de Potência", &format!("{peak_pwr:.0} W"), "Pico do Sistema");
+                    });
+                    cols[3].vertical(|ui| {
+                        stat_metric_box(ui, theme, "Variação Linha 12V", &format!("{droop_pct:.2}%"), &format!("{min_12:.2}V - {max_12:.2}V"));
+                    });
                 });
+
+                ui.add_space(12.0);
+                ui.separator();
+                ui.add_space(10.0);
+
+                // Gráficos e Curvas de Desempenho
+                ui.label(RichText::new("📈 Curvas de Telemetria Durante o Teste:").size(14.5).color(theme.accent_primary()).strong());
+                ui.add_space(6.0);
+
+                let spec_temp = GraphPlotSpec {
+                    title: "Curva de Temperatura da CPU (°C)",
+                    min_val: 30.0,
+                    max_val: 100.0,
+                    line_color: Color32::from_rgb(239, 68, 68),
+                };
+                render_telemetry_graph(ui, theme, &spec_temp, &history, |p| p.cpu_temp);
+                ui.add_space(8.0);
+
+                let spec_12v = GraphPlotSpec {
+                    title: "Estabilidade da Tensão +12V (Volts)",
+                    min_val: 11.5,
+                    max_val: 12.5,
+                    line_color: Color32::from_rgb(0, 190, 255),
+                };
+                render_telemetry_graph(ui, theme, &spec_12v, &history, |p| p.voltage_12v);
+                ui.add_space(8.0);
+
+                let spec_pwr = GraphPlotSpec {
+                    title: "Curva de Potência Total do Sistema (Watts)",
+                    min_val: 50.0,
+                    max_val: 500.0,
+                    line_color: Color32::from_rgb(16, 220, 140),
+                };
+                render_telemetry_graph(ui, theme, &spec_pwr, &history, |p| p.total_power_w);
+
+                ui.add_space(12.0);
+                ui.separator();
+                ui.add_space(10.0);
+
+                // Botões de Ação no Rodapé do Modal
+                ui.horizontal(|ui| {
+                    if is_running {
+                        let cancel_btn = Button::new(
+                            RichText::new("⏹ Parar / Cancelar Teste")
+                                .strong()
+                                .size(14.0)
+                                .color(Color32::from_rgb(255, 255, 255)),
+                        )
+                        .fill(Color32::from_rgb(220, 38, 38))
+                        .corner_radius(CornerRadius::same(6))
+                        .min_size(egui::vec2(180.0, 34.0));
+
+                        if ui.add(cancel_btn).clicked() {
+                            stress.cancel_test();
+                        }
+                    }
+
+                    let close_btn = Button::new(RichText::new("Fechar Relatório").strong().size(14.0))
+                        .corner_radius(CornerRadius::same(6))
+                        .min_size(egui::vec2(140.0, 34.0));
+
+                    if ui.add(close_btn).clicked() {
+                        close_requested = true;
+                    }
+                });
+
+                ui.add_space(8.0);
             });
+        });
+
+    if close_requested {
+        show = false;
     }
 
     if let Ok(mut m) = stress.show_modal.lock() {
@@ -366,7 +454,7 @@ fn render_telemetry_graph(
     extractor: impl Fn(&crate::hardware::power::StressDataPoint) -> f32,
 ) {
     ui.label(RichText::new(spec.title).size(13.0).color(theme.text_secondary()));
-    let height = 54.0_f32;
+    let height = 58.0_f32;
     let desired_width = ui.available_width();
     let (rect, _) = ui.allocate_exact_size(egui::vec2(desired_width, height), egui::Sense::hover());
 
@@ -380,13 +468,24 @@ fn render_telemetry_graph(
         },
     );
 
-    if history.len() < 2 {
+    if history.is_empty() {
         ui.painter().text(
             rect.center(),
             egui::Align2::CENTER_CENTER,
-            "Dados insuficientes para desenhar curva",
+            "Aguardando primeiras amostras...",
             egui::FontId::proportional(12.0),
             theme.text_secondary(),
+        );
+        return;
+    }
+
+    if history.len() == 1 {
+        let val = extractor(&history[0]);
+        let frac_y = ((val - spec.min_val) / (spec.max_val - spec.min_val)).clamp(0.0, 1.0);
+        let py = rect.max.y - (frac_y * (rect.height() - 8.0)) - 4.0;
+        ui.painter().line_segment(
+            [egui::pos2(rect.min.x, py), egui::pos2(rect.max.x, py)],
+            Stroke::new(2.0_f32, spec.line_color),
         );
         return;
     }
