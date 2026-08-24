@@ -125,7 +125,7 @@ impl PhysicalDriveInfo {
         self.smart_attributes = vec![
             SmartAttribute {
                 id: "05".to_string(),
-                name: "Reallocated Sectors Count (Setores Realocados)".to_string(),
+                name: "Contagem de Setores Realocados (Bad Blocks)".to_string(),
                 value_str: format!("{}", self.reallocated_sectors),
                 threshold_str: "0".to_string(),
                 status: if self.reallocated_sectors == 0 { "Normal".to_string() } else { "Crítico".to_string() },
@@ -133,7 +133,7 @@ impl PhysicalDriveInfo {
             },
             SmartAttribute {
                 id: "09".to_string(),
-                name: "Power-On Hours (Tempo Total Ligado)".to_string(),
+                name: "Tempo Total de Funcionamento (Horas Ligado)".to_string(),
                 value_str: power_time_str,
                 threshold_str: "N/A".to_string(),
                 status: "Normal".to_string(),
@@ -141,15 +141,23 @@ impl PhysicalDriveInfo {
             },
             SmartAttribute {
                 id: "0C".to_string(),
-                name: "Power Cycle Count (Ciclos de Energia)".to_string(),
+                name: "Contagem de Ciclos de Energia (Liga/Desliga)".to_string(),
                 value_str: format!("{} vezes", self.power_cycles),
                 threshold_str: "N/A".to_string(),
                 status: "Normal".to_string(),
                 is_critical: false,
             },
             SmartAttribute {
+                id: "E7".to_string(),
+                name: "Vida Útil Restante da Memória Flash (Saúde)".to_string(),
+                value_str: format!("{:.0}% restante", self.wear_level_pct),
+                threshold_str: "10%".to_string(),
+                status: if self.wear_level_pct >= 20.0 { "Normal".to_string() } else { "Atenção".to_string() },
+                is_critical: true,
+            },
+            SmartAttribute {
                 id: "AF".to_string(),
-                name: "Program / Erase Fail Count (Falhas Flash)".to_string(),
+                name: "Contagem de Falhas de Programação/Apagamento".to_string(),
                 value_str: "0".to_string(),
                 threshold_str: "0".to_string(),
                 status: "Normal".to_string(),
@@ -157,7 +165,7 @@ impl PhysicalDriveInfo {
             },
             SmartAttribute {
                 id: "B8".to_string(),
-                name: "End-to-End Error Detection (Erros Fim-a-Fim)".to_string(),
+                name: "Detecção de Erros de Transmissão Fim-a-Fim".to_string(),
                 value_str: "0".to_string(),
                 threshold_str: "0".to_string(),
                 status: "Normal".to_string(),
@@ -165,7 +173,7 @@ impl PhysicalDriveInfo {
             },
             SmartAttribute {
                 id: "BB".to_string(),
-                name: "Reported Uncorrectable Errors (Incorrigíveis)".to_string(),
+                name: "Erros Incorrigíveis Reportados pelo Hardware".to_string(),
                 value_str: "0".to_string(),
                 threshold_str: "0".to_string(),
                 status: "Normal".to_string(),
@@ -173,26 +181,26 @@ impl PhysicalDriveInfo {
             },
             SmartAttribute {
                 id: "C7".to_string(),
-                name: "UltraDMA / PCIe CRC Error Count (Erros Barramento)".to_string(),
+                name: "Contagem de Erros de Comunicação CRC (Cabo/Slot)".to_string(),
                 value_str: format!("{}", self.crc_errors),
                 threshold_str: "0".to_string(),
                 status: if self.crc_errors == 0 { "Normal".to_string() } else { "Atenção".to_string() },
                 is_critical: false,
             },
             SmartAttribute {
-                id: "E7".to_string(),
-                name: "SSD Life Remaining / Wear Level (Saúde Flash)".to_string(),
-                value_str: format!("{:.0}% restante", self.wear_level_pct),
-                threshold_str: "10%".to_string(),
-                status: if self.wear_level_pct >= 20.0 { "Normal".to_string() } else { "Atenção".to_string() },
-                is_critical: true,
-            },
-            SmartAttribute {
                 id: "0E".to_string(),
-                name: "NVMe Media & Data Integrity Errors".to_string(),
+                name: "Erros de Integridade de Mídia e Dados NVMe".to_string(),
                 value_str: "0".to_string(),
                 threshold_str: "0".to_string(),
                 status: "Normal".to_string(),
+                is_critical: true,
+            },
+            SmartAttribute {
+                id: "C2".to_string(),
+                name: "Temperatura Operacional Interna do Disco".to_string(),
+                value_str: format!("{:.1} °C", self.temperature_c),
+                threshold_str: "65 °C".to_string(),
+                status: if self.temperature_c < 65.0 { "Normal".to_string() } else { "Atenção".to_string() },
                 is_critical: true,
             },
         ];

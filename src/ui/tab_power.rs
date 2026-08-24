@@ -22,8 +22,12 @@ pub fn render(
     stress: &mut PowerStressManager,
 ) {
     let current_state = stress.state.lock().map_or(PowerTestState::Idle, |s| s.clone());
-    let rails = stress.rails.lock().map_or_else(|_| crate::hardware::PowerRailTelemetry::default(), |r| r.clone());
     let is_running = matches!(current_state, PowerTestState::Running { .. });
+    let rails = if is_running {
+        stress.rails.lock().map_or_else(|_| hardware.power.clone(), |r| r.clone())
+    } else {
+        hardware.power.clone()
+    };
 
     ScrollArea::vertical().show(ui, |ui| {
         ui.add_space(4.0);

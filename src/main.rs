@@ -25,6 +25,7 @@ fn main() -> eframe::Result {
             .with_icon(app_icon)
             .with_inner_size([1040.0, 880.0])
             .with_min_inner_size([880.0, 640.0])
+            .with_maximized(true)
             .with_active(true),
         ..Default::default()
     };
