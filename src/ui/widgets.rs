@@ -56,12 +56,13 @@ fn get_gpu_tech_description(name: &str) -> &'static str {
     }
 }
 
-/// Renders a section header with icon, title, and optional brand badge.
+/// Renders a clean section header with guaranteed font rendering (no double square glyphs).
 pub fn section_header(ui: &mut Ui, theme: AppTheme, icon: &str, title: &str) {
+    let clean_icon = icon.replace(['\u{FE0E}', '\u{FE0F}'], "");
     ui.horizontal(|ui| {
         ui.label(
-            RichText::new(icon)
-                .size(21.0)
+            RichText::new(clean_icon)
+                .size(20.0)
                 .color(theme.accent_primary())
                 .strong(),
         );

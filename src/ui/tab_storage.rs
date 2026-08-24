@@ -3,7 +3,7 @@
 use super::theme::AppTheme;
 use super::widgets::{load_gauge, section_header, spec_row, stat_metric_box};
 use crate::hardware::SystemHardware;
-use eframe::egui::{self, Color32, CornerRadius, RichText, ScrollArea, Ui};
+use eframe::egui::{self, Color32, CornerRadius, Margin, RichText, ScrollArea, Stroke, Ui};
 
 /// State for the storage tab view.
 #[derive(Debug, Clone, Default)]
@@ -53,37 +53,77 @@ pub fn render(
         ui.add_space(8.0);
 
         if let Some(drive) = hardware.storage.drives.get(state.selected_drive) {
+            // Avisos e Diagnósticos Automatizados S.M.A.R.T.
+            theme.card_frame().show(ui, |ui| {
+                section_header(ui, theme, "🛡", "Diagnósticos de Saúde & Alertas S.M.A.R.T.");
+
+                for warning in &drive.diagnostic_warnings {
+                    let is_crit = warning.contains("ALERTA");
+                    let (bg, border, text_col) = if is_crit {
+                        (
+                            Color32::from_rgb(45, 20, 15),
+                            Color32::from_rgb(239, 68, 68),
+                            Color32::from_rgb(255, 220, 220),
+                        )
+                    } else {
+                        (
+                            match theme {
+                                AppTheme::Dark => Color32::from_rgb(18, 38, 26),
+                                AppTheme::Light => Color32::from_rgb(230, 250, 238),
+                            },
+                            theme.accent_secondary(),
+                            theme.accent_secondary(),
+                        )
+                    };
+
+                    egui::Frame::new()
+                        .fill(bg)
+                        .stroke(Stroke::new(1.0_f32, border))
+                        .corner_radius(CornerRadius::same(6))
+                        .inner_margin(Margin::symmetric(10, 6))
+                        .show(ui, |ui| {
+                            ui.label(RichText::new(warning).size(13.0).color(text_col).strong());
+                        });
+                    ui.add_space(4.0);
+                }
+            });
+
+            ui.add_space(8.0);
+
             // Métricas em Destaque (SSD-Z Live Cards)
             theme.card_frame().show(ui, |ui| {
                 ui.columns(4, |cols| {
                     cols[0].vertical(|ui| {
-                        stat_metric_box(ui, theme, "Saúde S.M.A.R.T.", &drive.health_status, "Status: Saudável");
+                        stat_metric_box(ui, theme, "Saúde S.M.A.R.T.", &drive.health_status, &format!("{:.0}% Vida Útil Flash", drive.wear_level_pct));
                     });
                     cols[1].vertical(|ui| {
                         let temp_text = format!("{:.0} °C", drive.temperature_c);
                         stat_metric_box(ui, theme, "Temperatura", &temp_text, if drive.temperature_c < 55.0 { "Temperatura Ideal" } else { "Atenção Térmica" });
                     });
                     cols[2].vertical(|ui| {
-                        let tbw_text = format!("{:.1} TB", drive.total_host_writes_tb);
-                        stat_metric_box(ui, theme, "Total Escrito (TBW)", &tbw_text, "Host Writes");
+                        let realloc_text = format!("{} setores", drive.reallocated_sectors);
+                        stat_metric_box(ui, theme, "Setores Realocados", &realloc_text, if drive.reallocated_sectors == 0 { "Nenhum Bloco Ruim" } else { "Crítico: Falha Física" });
                     });
                     cols[3].vertical(|ui| {
-                        let hours_text = format!("{} hrs", drive.power_on_hours);
-                        stat_metric_box(ui, theme, "Tempo de Uso", &hours_text, &format!("{} ciclos lig/desl", drive.power_cycles));
+                        let days = drive.power_on_hours / 24;
+                        let hours_rem = drive.power_on_hours % 24;
+                        let hours_text = format!("{days}d {hours_rem}h");
+                        stat_metric_box(ui, theme, "Tempo Total Ligado", &hours_text, &format!("{} ciclos de energia", drive.power_cycles));
                     });
                 });
 
                 ui.add_space(8.0);
 
-                // Gauge de Temperatura do SSD
-                let temp_pct = ((drive.temperature_c - 20.0) / 60.0 * 100.0).clamp(0.0, 100.0);
-                load_gauge(
-                    ui,
-                    theme,
-                    "Temperatura Operacional do Drive",
-                    temp_pct,
-                    &format!("{:.1} °C", drive.temperature_c),
-                );
+                // Gauges
+                ui.columns(2, |cols| {
+                    cols[0].vertical(|ui| {
+                        let temp_pct = ((drive.temperature_c - 20.0) / 60.0 * 100.0).clamp(0.0, 100.0);
+                        load_gauge(ui, theme, "Temperatura Operacional", temp_pct, &format!("{:.1} °C", drive.temperature_c));
+                    });
+                    cols[1].vertical(|ui| {
+                        load_gauge(ui, theme, "Saúde da Memória Flash", drive.wear_level_pct, &format!("{:.0}% restante", drive.wear_level_pct));
+                    });
+                });
             });
 
             ui.add_space(8.0);
@@ -105,8 +145,43 @@ pub fn render(
                         spec_row(ui, theme, "Versão de Firmware", &drive.firmware);
                         spec_row(ui, theme, "Tecnologia de Memória", &drive.technology);
                         spec_row(ui, theme, "Total Lido (TBR)", &format!("{:.1} TB", drive.total_host_reads_tb));
+                        spec_row(ui, theme, "Total Escrito (TBW)", &format!("{:.1} TB", drive.total_host_writes_tb));
                     });
                 });
+            });
+
+            ui.add_space(8.0);
+
+            // Tabela Detalhada de Atributos S.M.A.R.T.
+            theme.card_frame().show(ui, |ui| {
+                section_header(ui, theme, "📊", "Tabela de Atributos S.M.A.R.T. Principais");
+
+                egui::Grid::new("smart_attributes_table_grid")
+                    .striped(true)
+                    .min_col_width(85.0)
+                    .show(ui, |ui| {
+                        ui.label(RichText::new("ID").strong().color(theme.text_secondary()));
+                        ui.label(RichText::new("Nome do Atributo").strong().color(theme.accent_primary()));
+                        ui.label(RichText::new("Valor Atual").strong().color(theme.text_primary()));
+                        ui.label(RichText::new("Limite Limiar").strong().color(theme.text_secondary()));
+                        ui.label(RichText::new("Status").strong().color(theme.text_primary()));
+                        ui.end_row();
+
+                        for attr in &drive.smart_attributes {
+                            ui.label(RichText::new(&attr.id).strong().color(theme.text_secondary()));
+                            ui.label(RichText::new(&attr.name).color(theme.text_primary()));
+                            ui.label(RichText::new(&attr.value_str).strong().color(theme.text_primary()));
+                            ui.label(RichText::new(&attr.threshold_str).color(theme.text_secondary()));
+
+                            let status_color = if attr.status == "Normal" {
+                                theme.accent_secondary()
+                            } else {
+                                Color32::from_rgb(239, 68, 68)
+                            };
+                            ui.label(RichText::new(&attr.status).strong().color(status_color));
+                            ui.end_row();
+                        }
+                    });
             });
 
             ui.add_space(8.0);

@@ -56,7 +56,7 @@ pub fn render(ui: &mut Ui, theme: AppTheme, hardware: &SystemHardware) {
 
         // Sensores Térmicos & Ventoinha do CPU
         theme.card_frame().show(ui, |ui| {
-            section_header(ui, theme, "🌡️", "Sensores Térmicos & Ventoinha do Cooler");
+            section_header(ui, theme, "🌡", "Sensores Térmicos & Ventoinha do Cooler");
 
             ui.columns(4, |cols| {
                 cols[0].vertical(|ui| {
