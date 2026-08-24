@@ -105,9 +105,16 @@ impl HardwareEngine {
 
         self.data.cpu.update_live_metrics(&self.system, &self.components);
         self.data.memory.update_live_metrics(&self.system);
+        let mut gpu_load = 5.0_f32;
         for gpu in &mut self.data.gpus {
             gpu.update_live_metrics();
+            gpu_load = gpu_load.max(gpu.live_load_pct);
         }
+        self.data.power.update_live_metrics(
+            self.data.cpu.live.global_load_pct,
+            gpu_load,
+            self.data.cpu.live.avg_frequency_mhz,
+        );
         self.data.uptime_secs = System::uptime();
     }
 }
