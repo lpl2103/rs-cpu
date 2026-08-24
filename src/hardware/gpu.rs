@@ -138,11 +138,18 @@ impl GpuInfo {
 
 #[cfg(target_os = "windows")]
 fn detect_windows_gpus() -> Option<Vec<GpuInfo>> {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
     let mut gpus = Vec::new();
 
     let output = std::process::Command::new("powershell")
+        .creation_flags(CREATE_NO_WINDOW)
         .args([
             "-NoProfile",
+            "-NonInteractive",
+            "-WindowStyle",
+            "Hidden",
             "-Command",
             "Get-CimInstance Win32_VideoController | Select-Object -Property Name, AdapterRAM, DriverVersion, DriverDate | ConvertTo-Json",
         ])
