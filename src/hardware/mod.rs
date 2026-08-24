@@ -4,14 +4,16 @@ pub mod cpu;
 pub mod gpu;
 pub mod memory;
 pub mod motherboard;
+pub mod storage;
 
 pub use cpu::{CacheInfo, CpuInfo, CpuLiveMetrics};
 pub use gpu::GpuInfo;
 pub use memory::{MemoryInfo, MemoryLiveMetrics, SpdSlotInfo, TimingProfile};
 pub use motherboard::MotherboardInfo;
+pub use storage::{PartitionInfo, PhysicalDriveInfo, StorageInfo};
 
 use serde::{Deserialize, Serialize};
-use sysinfo::{CpuRefreshKind, MemoryRefreshKind, RefreshKind, System};
+use sysinfo::{Components, CpuRefreshKind, MemoryRefreshKind, RefreshKind, System};
 
 /// Central hardware state combining all detected components.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -22,7 +24,9 @@ pub struct SystemHardware {
     pub motherboard: MotherboardInfo,
     /// Memory configuration, SPD slots, and live usage.
     pub memory: MemoryInfo,
-    /// Graphics cards installed.
+    /// Storage drives and volume maps (SSD-Z).
+    pub storage: StorageInfo,
+    /// Graphics cards installed (GPU-Z).
     pub gpus: Vec<GpuInfo>,
     /// Operating System details.
     pub os_name: String,
@@ -36,6 +40,8 @@ pub struct SystemHardware {
 pub struct HardwareEngine {
     /// Low-level sysinfo monitor instance.
     pub system: System,
+    /// Sensor components (temperatures, fans).
+    pub components: Components,
     /// Current aggregated snapshot of hardware information.
     pub data: SystemHardware,
 }
@@ -47,7 +53,7 @@ impl Default for HardwareEngine {
 }
 
 impl HardwareEngine {
-    /// Initializes hardware inspection, reading CPUID, SMBIOS, and platform telemetry.
+    /// Initializes hardware inspection, reading CPUID, SMBIOS, Storage, and platform telemetry.
     #[must_use]
     pub fn new() -> Self {
         let mut system = System::new_with_specifics(
@@ -56,13 +62,15 @@ impl HardwareEngine {
                 .with_memory(MemoryRefreshKind::everything()),
         );
 
-        // First sleep/refresh cycle to establish CPU usage baseline
         system.refresh_cpu_all();
         system.refresh_memory();
 
-        let cpu = CpuInfo::detect(&system);
+        let components = Components::new_with_refreshed_list();
+
+        let cpu = CpuInfo::detect(&system, &components);
         let motherboard = MotherboardInfo::detect();
         let memory = MemoryInfo::detect(&system);
+        let storage = StorageInfo::detect();
         let gpus = GpuInfo::detect();
 
         let os_name = System::name().unwrap_or_else(|| "Windows / Linux".to_string());
@@ -73,22 +81,27 @@ impl HardwareEngine {
             cpu,
             motherboard,
             memory,
+            storage,
             gpus,
             os_name,
             os_version,
             uptime_secs,
         };
 
-        Self { system, data }
+        Self { system, components, data }
     }
 
-    /// Performs a non-blocking live refresh of dynamic metrics (CPU clocks, load, memory usage).
+    /// Performs a non-blocking live refresh of dynamic metrics (CPU clocks, load, temp, fan, memory usage, GPU).
     pub fn refresh_live_metrics(&mut self) {
         self.system.refresh_cpu_all();
         self.system.refresh_memory();
+        self.components.refresh(true);
 
-        self.data.cpu.update_live_metrics(&self.system);
+        self.data.cpu.update_live_metrics(&self.system, &self.components);
         self.data.memory.update_live_metrics(&self.system);
+        for gpu in &mut self.data.gpus {
+            gpu.update_live_metrics();
+        }
         self.data.uptime_secs = System::uptime();
     }
 }

@@ -1,7 +1,7 @@
 //! Detailed CPU View tab.
 
 use super::theme::AppTheme;
-use super::widgets::{instructions_grid, load_gauge, section_header, spec_row};
+use super::widgets::{brand_logo_badge, instructions_grid, load_gauge, section_header, spec_row, stat_metric_box};
 use crate::hardware::SystemHardware;
 use eframe::egui::{RichText, ScrollArea, Ui};
 
@@ -10,9 +10,14 @@ pub fn render(ui: &mut Ui, theme: AppTheme, hardware: &SystemHardware) {
     ScrollArea::vertical().show(ui, |ui| {
         ui.add_space(4.0);
 
-        // Informações Gerais do Processador
+        // Informações Gerais do Processador + Logo da Marca
         theme.card_frame().show(ui, |ui| {
-            section_header(ui, theme, "🔲", "Informações do Processador");
+            ui.horizontal(|ui| {
+                section_header(ui, theme, "🔲", "Informações do Processador");
+                ui.with_layout(eframe::egui::Layout::right_to_left(eframe::egui::Align::Center), |ui| {
+                    brand_logo_badge(ui, &hardware.cpu.vendor, &hardware.cpu.name);
+                });
+            });
 
             spec_row(ui, theme, "Nome", &hardware.cpu.name);
             spec_row(ui, theme, "Codinome", &hardware.cpu.code_name);
@@ -42,9 +47,48 @@ pub fn render(ui: &mut Ui, theme: AppTheme, hardware: &SystemHardware) {
             ui.separator();
             ui.add_space(8.0);
 
-            ui.label(RichText::new("Instruções Suportadas").size(13.0).color(theme.text_secondary()).strong());
+            ui.label(RichText::new("Instruções Suportadas (Passe o cursor sobre para ver detalhes)").size(13.0).color(theme.text_secondary()).strong());
             ui.add_space(6.0);
             instructions_grid(ui, theme, &hardware.cpu.instructions);
+        });
+
+        ui.add_space(8.0);
+
+        // Sensores Térmicos & Ventoinha do CPU
+        theme.card_frame().show(ui, |ui| {
+            section_header(ui, theme, "🌡️", "Sensores Térmicos & Ventoinha do Cooler");
+
+            ui.columns(4, |cols| {
+                cols[0].vertical(|ui| {
+                    let temp_text = format!("{:.1} °C", hardware.cpu.live.cpu_temp_c);
+                    stat_metric_box(ui, theme, "Temperatura CPU", &temp_text, if hardware.cpu.live.cpu_temp_c < 65.0 { "Temperatura Ideal" } else { "Carga Térmica Alta" });
+                });
+                cols[1].vertical(|ui| {
+                    let fan_text = format!("{} RPM", hardware.cpu.live.fan_speed_rpm);
+                    stat_metric_box(ui, theme, "Ventoinha Cooler", &fan_text, "Rotação Ativa");
+                });
+                cols[2].vertical(|ui| {
+                    let freq_text = format!("{:.0} MHz", hardware.cpu.live.avg_frequency_mhz);
+                    stat_metric_box(ui, theme, "Frequência Média", &freq_text, &format!("x{:.1} Multiplicador", hardware.cpu.live.multiplier));
+                });
+                cols[3].vertical(|ui| {
+                    let load_text = format!("{:.1}%", hardware.cpu.live.global_load_pct);
+                    stat_metric_box(ui, theme, "Carga Global", &load_text, &format!("{}T Ativas", hardware.cpu.logical_threads));
+                });
+            });
+
+            ui.add_space(8.0);
+
+            ui.columns(2, |cols| {
+                cols[0].vertical(|ui| {
+                    let temp_pct = ((hardware.cpu.live.cpu_temp_c - 25.0) / 70.0 * 100.0).clamp(0.0, 100.0);
+                    load_gauge(ui, theme, "Temperatura do Encapsulamento (Package)", temp_pct, &format!("{:.1} °C", hardware.cpu.live.cpu_temp_c));
+                });
+                cols[1].vertical(|ui| {
+                    let fan_pct = ((hardware.cpu.live.fan_speed_rpm as f32 - 600.0) / 1800.0 * 100.0).clamp(0.0, 100.0);
+                    load_gauge(ui, theme, "Velocidade da Ventoinha (Cooler)", fan_pct, &format!("{} RPM", hardware.cpu.live.fan_speed_rpm));
+                });
+            });
         });
 
         ui.add_space(8.0);

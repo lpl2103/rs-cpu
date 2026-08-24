@@ -1,7 +1,7 @@
-//! Unified "All-in-One" Dashboard displaying CPU, Motherboard, and Memory together.
+//! Unified "All-in-One" Dashboard displaying CPU, Motherboard, Memory, and Storage together.
 
 use super::theme::AppTheme;
-use super::widgets::{instructions_grid, load_gauge, section_header, spec_row, stat_metric_box};
+use super::widgets::{brand_logo_badge, instructions_grid, load_gauge, section_header, spec_row, stat_metric_box};
 use crate::hardware::SystemHardware;
 use eframe::egui::{self, RichText, ScrollArea, Ui};
 
@@ -15,7 +15,7 @@ pub fn render(ui: &mut Ui, theme: AppTheme, hardware: &SystemHardware) {
             ui.horizontal(|ui| {
                 ui.label(
                     RichText::new("⚡ Telemetria do Sistema em Tempo Real")
-                        .size(14.5)
+                        .size(15.0)
                         .color(theme.accent_primary())
                         .strong(),
                 );
@@ -24,7 +24,7 @@ pub fn render(ui: &mut Ui, theme: AppTheme, hardware: &SystemHardware) {
                     let mins = (hardware.uptime_secs % 3600) / 60;
                     ui.label(
                         RichText::new(format!("Atividade: {hours}h {mins}m | {} ({})", hardware.os_name, hardware.os_version))
-                            .size(12.0)
+                            .size(12.5)
                             .color(theme.text_secondary()),
                     );
                 });
@@ -38,13 +38,13 @@ pub fn render(ui: &mut Ui, theme: AppTheme, hardware: &SystemHardware) {
                     stat_metric_box(ui, theme, "Clock Médio CPU", &format!("{freq:.0} MHz"), &format!("x{:.1} Multiplicador", hardware.cpu.live.multiplier));
                 });
                 cols[1].vertical(|ui| {
-                    let load = hardware.cpu.live.global_load_pct;
-                    stat_metric_box(ui, theme, "Uso da CPU", &format!("{load:.1}%"), &format!("{} Núcleos / {} Threads", hardware.cpu.physical_cores, hardware.cpu.logical_threads));
+                    let temp_text = format!("{:.1} °C", hardware.cpu.live.cpu_temp_c);
+                    stat_metric_box(ui, theme, "Temperatura CPU", &temp_text, &format!("{} RPM Ventoinha", hardware.cpu.live.fan_speed_rpm));
                 });
                 cols[2].vertical(|ui| {
                     let used_gb = (hardware.memory.live.used_mb as f32) / 1024.0;
                     let total_gb = (hardware.memory.total_mb as f32) / 1024.0;
-                    stat_metric_box(ui, theme, "Memória em Uso", &format!("{used_gb:.1} / {total_gb:.1} GB"), &format!("{:.1}% em uso", hardware.memory.live.usage_pct));
+                    stat_metric_box(ui, theme, "Memória RAM em Uso", &format!("{used_gb:.1} / {total_gb:.1} GB"), &format!("{:.1}% em uso", hardware.memory.live.usage_pct));
                 });
                 cols[3].vertical(|ui| {
                     let dram_clk = hardware.memory.dram_frequency_mhz;
@@ -56,10 +56,10 @@ pub fn render(ui: &mut Ui, theme: AppTheme, hardware: &SystemHardware) {
 
             ui.columns(2, |cols| {
                 cols[0].vertical(|ui| {
-                    load_gauge(ui, theme, "Carga da CPU", hardware.cpu.live.global_load_pct, &format!("{:.1}%", hardware.cpu.live.global_load_pct));
+                    load_gauge(ui, theme, "Carga da CPU", hardware.cpu.live.global_load_pct, &format!("{:.1}% ({} núcleos)", hardware.cpu.live.global_load_pct, hardware.cpu.physical_cores));
                 });
                 cols[1].vertical(|ui| {
-                    load_gauge(ui, theme, "Uso de RAM", hardware.memory.live.usage_pct, &format!("{} MB / {} MB", hardware.memory.live.used_mb, hardware.memory.total_mb));
+                    load_gauge(ui, theme, "Uso de Memória RAM", hardware.memory.live.usage_pct, &format!("{} MB / {} MB", hardware.memory.live.used_mb, hardware.memory.total_mb));
                 });
             });
         });
@@ -68,7 +68,12 @@ pub fn render(ui: &mut Ui, theme: AppTheme, hardware: &SystemHardware) {
 
         // --- SEÇÃO 1: PROCESSADOR (CPU) ---
         theme.card_frame().show(ui, |ui| {
-            section_header(ui, theme, "🔲", "Processador (CPU)");
+            ui.horizontal(|ui| {
+                section_header(ui, theme, "🔲", "Processador (CPU)");
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    brand_logo_badge(ui, &hardware.cpu.vendor, &hardware.cpu.name);
+                });
+            });
 
             ui.columns(2, |cols| {
                 cols[0].vertical(|ui| {
@@ -94,8 +99,8 @@ pub fn render(ui: &mut Ui, theme: AppTheme, hardware: &SystemHardware) {
             ui.separator();
             ui.add_space(8.0);
 
-            // Instruções em Colunas Organizadas
-            ui.label(RichText::new("Instruções Suportadas").size(13.0).color(theme.text_secondary()).strong());
+            // Instruções em Colunas com Tooltips
+            ui.label(RichText::new("Instruções Suportadas (Passe o cursor sobre para ver detalhes)").size(13.0).color(theme.text_secondary()).strong());
             ui.add_space(6.0);
             instructions_grid(ui, theme, &hardware.cpu.instructions);
 
@@ -192,23 +197,51 @@ pub fn render(ui: &mut Ui, theme: AppTheme, hardware: &SystemHardware) {
             });
         });
 
-        // --- SEÇÃO 4: PLACA DE VÍDEO (GPU) ---
-        if let Some(gpu) = hardware.gpus.first() {
-            ui.add_space(8.0);
+        ui.add_space(8.0);
+
+        // --- SEÇÃO 4: ARMAZENAMENTO (SSD-Z RESUMO) ---
+        if let Some(drive) = hardware.storage.drives.first() {
             theme.card_frame().show(ui, |ui| {
-                section_header(ui, theme, "🎮", "Placa de Vídeo (GPU)");
+                section_header(ui, theme, "💽", "Armazenamento Principal (SSD-Z)");
+
+                ui.columns(2, |cols| {
+                    cols[0].vertical(|ui| {
+                        spec_row(ui, theme, "Modelo do Disco", &drive.model);
+                        spec_row(ui, theme, "Interface & Formato", &format!("{} ({})", drive.interface, drive.form_factor));
+                        spec_row(ui, theme, "Capacidade Total", &format!("{:.1} GBytes", drive.capacity_gb));
+                    });
+                    cols[1].vertical(|ui| {
+                        spec_row(ui, theme, "Saúde S.M.A.R.T.", &drive.health_status);
+                        spec_row(ui, theme, "Temperatura do Drive", &format!("{:.1} °C", drive.temperature_c));
+                        spec_row(ui, theme, "Total Escrito (TBW)", &format!("{:.1} TB", drive.total_host_writes_tb));
+                    });
+                });
+            });
+
+            ui.add_space(8.0);
+        }
+
+        // --- SEÇÃO 5: PLACA DE VÍDEO (GPU-Z RESUMO) ---
+        if let Some(gpu) = hardware.gpus.first() {
+            theme.card_frame().show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    section_header(ui, theme, "🎮", "Placa Gráfica (GPU-Z)");
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        brand_logo_badge(ui, &gpu.vendor, &gpu.name);
+                    });
+                });
 
                 ui.columns(2, |cols| {
                     cols[0].vertical(|ui| {
                         spec_row(ui, theme, "Nome da GPU", &gpu.name);
-                        spec_row(ui, theme, "Fabricante", &gpu.vendor);
-                        spec_row(ui, theme, "Codinome / Arquitetura", &gpu.code_name);
+                        spec_row(ui, theme, "Fabricante / Subvendor", &gpu.subvendor);
+                        spec_row(ui, theme, "Codinome / GPU Core", &gpu.code_name);
                         spec_row(ui, theme, "Litografia / Processo", &gpu.technology);
                     });
                     cols[1].vertical(|ui| {
                         spec_row(ui, theme, "Memória de Vídeo (VRAM)", &format!("{} MB ({} GB)", gpu.vram_mb, gpu.vram_mb / 1024));
                         spec_row(ui, theme, "Tipo & Barramento", &format!("{} ({})", gpu.memory_type, gpu.bus_width));
-                        spec_row(ui, theme, "Clocks Núcleo / Memória", &format!("{} MHz / {} MHz", gpu.core_clock_mhz, gpu.memory_clock_mhz));
+                        spec_row(ui, theme, "Clocks Núcleo / Memória", &format!("{} MHz / {} MHz", gpu.base_clock_mhz, gpu.memory_clock_mhz));
                         spec_row(ui, theme, "Versão do Driver", &gpu.driver_version);
                     });
                 });

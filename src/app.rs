@@ -4,8 +4,8 @@ use crate::bench::BenchManager;
 use crate::hardware::HardwareEngine;
 use crate::ui::theme::AppTheme;
 use crate::ui::{
-    tab_about, tab_bench, tab_cpu, tab_graphics, tab_mainboard, tab_memory, tab_unified,
-    AboutTabState, GraphicsTabState, MemoryTabState,
+    tab_about, tab_bench, tab_cpu, tab_graphics, tab_mainboard, tab_memory, tab_storage,
+    tab_unified, AboutTabState, GraphicsTabState, MemoryTabState, StorageTabState,
 };
 use eframe::egui::{self, Button, CentralPanel, Color32, CornerRadius, RichText, TopBottomPanel};
 use std::sync::Arc;
@@ -14,7 +14,7 @@ use std::time::{Duration, Instant};
 /// Active navigation tab.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ActiveTab {
-    /// Unified Dashboard (CPU, Motherboard, Memory all together).
+    /// Unified Dashboard (CPU, Motherboard, Memory, Storage all together).
     Unified,
     /// Detailed CPU tab.
     Cpu,
@@ -22,7 +22,9 @@ pub enum ActiveTab {
     Mainboard,
     /// Detailed Memory & SPD tab.
     Memory,
-    /// Detailed Graphics tab.
+    /// Detailed Storage (SSD-Z) tab.
+    Storage,
+    /// Detailed Graphics (GPU-Z) tab.
     Graphics,
     /// Benchmark & Stress Test tab.
     Bench,
@@ -42,6 +44,8 @@ pub struct ModernCpuZApp {
     pub theme: AppTheme,
     /// Memory & SPD tab state.
     pub memory_state: MemoryTabState,
+    /// Storage tab state.
+    pub storage_state: StorageTabState,
     /// Graphics tab state.
     pub graphics_state: GraphicsTabState,
     /// About tab state.
@@ -85,7 +89,6 @@ impl ModernCpuZApp {
 
         #[cfg(target_os = "linux")]
         {
-            // Standard Linux font paths
             let linux_paths = [
                 "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
                 "/usr/share/fonts/TTF/DejaVuSans.ttf",
@@ -120,6 +123,7 @@ impl ModernCpuZApp {
             active_tab: ActiveTab::Unified,
             theme: AppTheme::Dark,
             memory_state: MemoryTabState::default(),
+            storage_state: StorageTabState::default(),
             graphics_state: GraphicsTabState::default(),
             about_state: AboutTabState::default(),
             last_update: Instant::now(),
@@ -129,6 +133,19 @@ impl ModernCpuZApp {
 
 impl eframe::App for ModernCpuZApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // Dynamic responsive zoom scaling based on window & monitor width
+        let screen_width = ctx.screen_rect().width();
+        let responsive_zoom = if screen_width >= 1600.0 {
+            1.15
+        } else if screen_width >= 1200.0 {
+            1.08
+        } else if screen_width >= 1000.0 {
+            1.04
+        } else {
+            1.00
+        };
+        ctx.set_zoom_factor(responsive_zoom);
+
         // Periodic non-blocking telemetry refresh (every 500ms)
         if self.last_update.elapsed() >= Duration::from_millis(500) {
             self.engine.refresh_live_metrics();
@@ -138,7 +155,7 @@ impl eframe::App for ModernCpuZApp {
         // Apply theme styling
         self.theme.apply(ctx);
 
-        // Top Navigation Bar
+        // Top Navigation Bar (Clean glyphs without emoji variation selector squares)
         TopBottomPanel::top("top_panel")
             .frame(
                 egui::Frame::new()
@@ -148,10 +165,10 @@ impl eframe::App for ModernCpuZApp {
             )
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
-                    // Logo / Title
+                    // Logo
                     ui.label(
                         RichText::new("⚡ M-CPU")
-                            .size(18.0)
+                            .size(19.0)
                             .color(self.theme.accent_primary())
                             .strong(),
                     );
@@ -159,15 +176,16 @@ impl eframe::App for ModernCpuZApp {
                     ui.separator();
                     ui.add_space(8.0);
 
-                    // Tab Navigation Buttons (PT-BR)
+                    // Tab Navigation Buttons (Clean PT-BR without modifier boxes)
                     let tabs = [
-                        (ActiveTab::Unified, "🖥️ Visão Geral"),
+                        (ActiveTab::Unified, "🖥 Visão Geral"),
                         (ActiveTab::Cpu, "🔲 Processador"),
                         (ActiveTab::Mainboard, "🖧 Placa-Mãe"),
-                        (ActiveTab::Memory, "💾 Memória & SPD"),
+                        (ActiveTab::Memory, "💾 Memória"),
+                        (ActiveTab::Storage, "💽 Armazenamento"),
                         (ActiveTab::Graphics, "🎮 Gráficos"),
                         (ActiveTab::Bench, "📊 Benchmark"),
-                        (ActiveTab::About, "ℹ️ Sobre"),
+                        (ActiveTab::About, "ℹ Sobre"),
                     ];
 
                     for (tab, label) in tabs {
@@ -200,10 +218,10 @@ impl eframe::App for ModernCpuZApp {
                         }
                     }
 
-                    // Right-aligned controls (Theme Toggle and Manual Refresh)
+                    // Right-aligned controls
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         let theme_icon = match self.theme {
-                            AppTheme::Dark => "☀️ Claro",
+                            AppTheme::Dark => "☀ Claro",
                             AppTheme::Light => "🌙 Escuro",
                         };
 
@@ -246,6 +264,9 @@ impl eframe::App for ModernCpuZApp {
                 ActiveTab::Memory => {
                     tab_memory::render(ui, self.theme, &self.engine.data, &mut self.memory_state);
                 }
+                ActiveTab::Storage => {
+                    tab_storage::render(ui, self.theme, &self.engine.data, &mut self.storage_state);
+                }
                 ActiveTab::Graphics => {
                     tab_graphics::render(ui, self.theme, &self.engine.data, &mut self.graphics_state);
                 }
@@ -257,7 +278,7 @@ impl eframe::App for ModernCpuZApp {
                 }
             });
 
-        // Request smooth repaint for real-time live clock meters
+        // Smooth repaint request for live telemetry
         ctx.request_repaint_after(Duration::from_millis(500));
     }
 }
