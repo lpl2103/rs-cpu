@@ -297,11 +297,18 @@ impl StorageInfo {
 
 #[cfg(target_os = "windows")]
 fn detect_windows_physical_drives(partitions: &[PartitionInfo]) -> Option<Vec<PhysicalDriveInfo>> {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
     let mut drives = Vec::new();
 
     let output = std::process::Command::new("powershell")
+        .creation_flags(CREATE_NO_WINDOW)
         .args([
             "-NoProfile",
+            "-NonInteractive",
+            "-WindowStyle",
+            "Hidden",
             "-Command",
             "Get-PhysicalDisk | Select-Object -Property FriendlyName, SerialNumber, MediaType, BusType, Size, FirmwareVersion, HealthStatus | ConvertTo-Json",
         ])
