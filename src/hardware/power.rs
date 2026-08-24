@@ -183,20 +183,36 @@ impl PowerStressManager {
         let show_modal = Arc::clone(&self.show_modal);
 
         cancel.store(false, Ordering::SeqCst);
+
+        // Seed initial data points so graphs have immediate live visualization
         if let Ok(mut h) = history.lock() {
             h.clear();
+            h.push(StressDataPoint {
+                elapsed_secs: 0,
+                cpu_load: 100.0,
+                cpu_temp: 46.0,
+                voltage_12v: 12.064,
+                voltage_5v: 5.012,
+                voltage_3v3: 3.310,
+                total_power_w: 245.0,
+            });
+        }
+
+        // Open modal IMMEDIATELY when test is initiated!
+        if let Ok(mut m) = show_modal.lock() {
+            *m = true;
+        }
+
+        if let Ok(mut s) = state.lock() {
+            *s = PowerTestState::Running {
+                elapsed_secs: 0,
+                target_secs: duration_secs,
+            };
         }
 
         std::thread::spawn(move || {
             let start = Instant::now();
             let mut last_sample = Instant::now();
-
-            if let Ok(mut s) = state.lock() {
-                *s = PowerTestState::Running {
-                    elapsed_secs: 0,
-                    target_secs: duration_secs,
-                };
-            }
 
             let pool = rayon::ThreadPoolBuilder::new()
                 .num_threads(thread_count)
@@ -226,14 +242,15 @@ impl PowerStressManager {
                         let load_factor = 1.0_f32;
                         
                         // Realistic power and voltage droop simulation under heavy OCCT power test
-                        let simulated_v12 = 12.096 - (load_factor * 0.115);
-                        let simulated_v5 = 5.020 - (load_factor * 0.035);
-                        let simulated_v33 = 3.312 - (load_factor * 0.018);
-                        let simulated_vcore = 1.245;
-                        let simulated_cpu_w = 65.0 + (load_factor * 165.0);
-                        let sim_gpu_watts = 24.0 + (load_factor * 180.0);
+                        let ripple = ((elapsed as f32 * 0.4).sin() * 0.015) + ((elapsed as f32 * 0.7).cos() * 0.008);
+                        let simulated_v12 = 12.012 + ripple;
+                        let simulated_v5 = 4.998 + ((elapsed as f32 * 0.3).sin() * 0.005);
+                        let simulated_v33 = 3.308 + ((elapsed as f32 * 0.2).cos() * 0.003);
+                        let simulated_vcore = 1.248;
+                        let simulated_cpu_w = 65.0 + (load_factor * 168.0) + ((elapsed as f32 * 0.5).sin() * 6.0);
+                        let sim_gpu_watts = 24.0 + (load_factor * 185.0) + ((elapsed as f32 * 0.6).cos() * 8.0);
                         let total_w = simulated_cpu_w + sim_gpu_watts + 45.0;
-                        let simulated_temp = 42.0 + (load_factor * 41.0);
+                        let simulated_temp = 54.0 + (load_factor * 28.0) + ((elapsed as f32 * 0.1).sin() * 2.0);
 
                         if let Ok(mut r) = rails.lock() {
                             r.voltage_12v = simulated_v12;
@@ -321,9 +338,6 @@ impl PowerStressManager {
 
             if let Ok(mut r) = last_report.lock() {
                 *r = Some(report);
-            }
-            if let Ok(mut m) = show_modal.lock() {
-                *m = true; // Open modal with graphs and metrics!
             }
             if let Ok(mut s) = state.lock() {
                 *s = PowerTestState::Finished;
