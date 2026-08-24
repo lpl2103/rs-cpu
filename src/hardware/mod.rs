@@ -4,13 +4,15 @@ pub mod cpu;
 pub mod gpu;
 pub mod memory;
 pub mod motherboard;
+pub mod power;
 pub mod storage;
 
 pub use cpu::{CacheInfo, CpuInfo, CpuLiveMetrics};
 pub use gpu::GpuInfo;
 pub use memory::{MemoryInfo, MemoryLiveMetrics, SpdSlotInfo, TimingProfile};
 pub use motherboard::MotherboardInfo;
-pub use storage::{PartitionInfo, PhysicalDriveInfo, StorageInfo};
+pub use power::{PowerRailTelemetry, PowerStressManager, PowerTestReport, PowerTestState};
+pub use storage::{PartitionInfo, PhysicalDriveInfo, SmartAttribute, StorageInfo};
 
 use serde::{Deserialize, Serialize};
 use sysinfo::{Components, CpuRefreshKind, MemoryRefreshKind, RefreshKind, System};
@@ -28,6 +30,8 @@ pub struct SystemHardware {
     pub storage: StorageInfo,
     /// Graphics cards installed (GPU-Z).
     pub gpus: Vec<GpuInfo>,
+    /// Power supply and voltage rails.
+    pub power: PowerRailTelemetry,
     /// Operating System details.
     pub os_name: String,
     /// OS Version and kernel.
@@ -72,6 +76,7 @@ impl HardwareEngine {
         let memory = MemoryInfo::detect(&system);
         let storage = StorageInfo::detect();
         let gpus = GpuInfo::detect();
+        let power = PowerRailTelemetry::default();
 
         let os_name = System::name().unwrap_or_else(|| "Windows / Linux".to_string());
         let os_version = System::os_version().unwrap_or_else(|| "10 / 11".to_string());
@@ -83,6 +88,7 @@ impl HardwareEngine {
             memory,
             storage,
             gpus,
+            power,
             os_name,
             os_version,
             uptime_secs,

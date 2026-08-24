@@ -1,11 +1,12 @@
 //! Main Application State and egui Frame integration.
 
 use crate::bench::BenchManager;
+use crate::hardware::power::PowerStressManager;
 use crate::hardware::HardwareEngine;
 use crate::ui::theme::AppTheme;
 use crate::ui::{
-    tab_about, tab_bench, tab_cpu, tab_graphics, tab_mainboard, tab_memory, tab_storage,
-    tab_unified, AboutTabState, GraphicsTabState, MemoryTabState, StorageTabState,
+    tab_about, tab_bench, tab_cpu, tab_graphics, tab_mainboard, tab_memory, tab_power,
+    tab_storage, tab_unified, AboutTabState, GraphicsTabState, MemoryTabState, StorageTabState,
 };
 use eframe::egui::{self, Button, CentralPanel, Color32, CornerRadius, RichText, TopBottomPanel};
 use std::sync::Arc;
@@ -26,7 +27,9 @@ pub enum ActiveTab {
     Storage,
     /// Detailed Graphics (GPU-Z) tab.
     Graphics,
-    /// Benchmark & Stress Test tab.
+    /// Power Supply & OCCT Stress Test tab.
+    Power,
+    /// Benchmark & CPU Stress tab.
     Bench,
     /// About & Report Export tab.
     About,
@@ -38,6 +41,8 @@ pub struct ModernCpuZApp {
     pub engine: HardwareEngine,
     /// CPU Benchmark manager.
     pub bench: BenchManager,
+    /// Power & PSU stress manager.
+    pub power_stress: PowerStressManager,
     /// Currently active navigation tab.
     pub active_tab: ActiveTab,
     /// Active visual theme.
@@ -116,10 +121,12 @@ impl ModernCpuZApp {
 
         let engine = HardwareEngine::new();
         let bench = BenchManager::default();
+        let power_stress = PowerStressManager::default();
 
         Self {
             engine,
             bench,
+            power_stress,
             active_tab: ActiveTab::Unified,
             theme: AppTheme::Dark,
             memory_state: MemoryTabState::default(),
@@ -133,7 +140,7 @@ impl ModernCpuZApp {
 
 impl eframe::App for ModernCpuZApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        // Dynamic responsive zoom scaling based on window & monitor width
+        // Dynamic responsive zoom scaling based on window width
         let screen_width = ctx.screen_rect().width();
         let responsive_zoom = if screen_width >= 1600.0 {
             1.15
@@ -155,7 +162,7 @@ impl eframe::App for ModernCpuZApp {
         // Apply theme styling
         self.theme.apply(ctx);
 
-        // Top Navigation Bar (Clean glyphs without emoji variation selector squares)
+        // Top Navigation Bar
         TopBottomPanel::top("top_panel")
             .frame(
                 egui::Frame::new()
@@ -184,6 +191,7 @@ impl eframe::App for ModernCpuZApp {
                         (ActiveTab::Memory, "💾 Memória"),
                         (ActiveTab::Storage, "💽 Armazenamento"),
                         (ActiveTab::Graphics, "🎮 Gráficos"),
+                        (ActiveTab::Power, "⚡ Energia & PSU"),
                         (ActiveTab::Bench, "📊 Benchmark"),
                         (ActiveTab::About, "ℹ Sobre"),
                     ];
@@ -269,6 +277,9 @@ impl eframe::App for ModernCpuZApp {
                 }
                 ActiveTab::Graphics => {
                     tab_graphics::render(ui, self.theme, &self.engine.data, &mut self.graphics_state);
+                }
+                ActiveTab::Power => {
+                    tab_power::render(ui, self.theme, &self.engine.data, &mut self.power_stress);
                 }
                 ActiveTab::Bench => {
                     tab_bench::render(ui, self.theme, &self.engine.data, &mut self.bench);

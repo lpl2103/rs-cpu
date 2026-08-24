@@ -7,6 +7,7 @@ pub mod tab_cpu;
 pub mod tab_graphics;
 pub mod tab_mainboard;
 pub mod tab_memory;
+pub mod tab_power;
 pub mod tab_storage;
 pub mod tab_unified;
 pub mod theme;
