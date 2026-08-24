@@ -22,14 +22,14 @@ pub fn create_app_icon() -> IconData {
                 || (fx > 51.0 && fy > 51.0 && (fx - 51.0).powi(2) + (fy - 51.0).powi(2) > 36.0);
 
             // Pins on outer edges
-            let is_pin_x = (fx < 6.0 || fx > 57.0) && (14.0..=49.0).contains(&fy) && ((y / 5) % 2 == 0);
-            let is_pin_y = (fy < 6.0 || fy > 57.0) && (14.0..=49.0).contains(&fx) && ((x / 5) % 2 == 0);
+            let is_pin_x = (fx < 6.0 || fx > 57.0) && (14.0..=49.0).contains(&fy) && (y / 5).is_multiple_of(2);
+            let is_pin_y = (fy < 6.0 || fy > 57.0) && (14.0..=49.0).contains(&fx) && (x / 5).is_multiple_of(2);
 
             // Letter 'M' drawing logic in the center
-            let is_m = ((18.0..=22.0).contains(&fx) && (20.0..=44.0).contains(&fy)) // Left leg
-                || ((42.0..=46.0).contains(&fx) && (20.0..=44.0).contains(&fy)) // Right leg
-                || ((22.0..=32.0).contains(&fx) && (fy - (20.0 + (fx - 22.0) * 1.3)).abs() <= 2.2 && fy <= 34.0) // Left diagonal
-                || ((32.0..=42.0).contains(&fx) && (fy - (33.0 - (fx - 32.0) * 1.3)).abs() <= 2.2 && fy <= 34.0); // Right diagonal
+            let is_m = ((18.0..=22.0).contains(&fx) && (20.0..=44.0).contains(&fy))
+                || ((42.0..=46.0).contains(&fx) && (20.0..=44.0).contains(&fy))
+                || ((22.0..=32.0).contains(&fx) && (fy - (20.0 + (fx - 22.0) * 1.3)).abs() <= 2.2 && fy <= 34.0)
+                || ((32.0..=42.0).contains(&fx) && (fy - (33.0 - (fx - 32.0) * 1.3)).abs() <= 2.2 && fy <= 34.0);
 
             // Central core glow dot
             let is_core_glow = (fx - 32.0).powi(2) + (fy - 37.0).powi(2) <= 10.0;
