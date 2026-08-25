@@ -307,45 +307,45 @@ fn render_results_modal(ctx: &egui::Context, theme: AppTheme, stress: &PowerStre
     egui::Window::new("🏆 Painel do Teste de Energia & Fonte (OCCT Power)")
         .open(&mut show)
         .collapsible(false)
-        .resizable(true)
-        .default_size([760.0, 580.0])
-        .min_size([620.0, 460.0])
+        .resizable(false)
+        .default_size([760.0, 560.0])
+        .fixed_size([760.0, 560.0])
         .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
         .show(ctx, |ui| {
-            ScrollArea::vertical().show(ui, |ui| {
-                ui.add_space(6.0);
+            ScrollArea::vertical()
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    ui.add_space(4.0);
 
-                // Cabeçalho de Status em 100% da Largura
-                let full_w = ui.available_width();
-                egui::Frame::new()
-                    .fill(if status_is_green {
-                        match theme {
-                            AppTheme::Dark => Color32::from_rgb(16, 38, 28),
-                            AppTheme::Light => Color32::from_rgb(228, 248, 236),
-                        }
-                    } else {
-                        Color32::from_rgb(45, 20, 15)
-                    })
-                    .stroke(Stroke::new(1.5_f32, if status_is_green { theme.accent_secondary() } else { Color32::from_rgb(239, 68, 68) }))
-                    .corner_radius(CornerRadius::same(8))
-                    .inner_margin(Margin::same(12))
-                    .show(ui, |ui| {
-                        ui.set_width(full_w - 24.0);
-                        ui.horizontal(|ui| {
+                    // Cabeçalho de Status
+                    egui::Frame::new()
+                        .fill(if status_is_green {
+                            match theme {
+                                AppTheme::Dark => Color32::from_rgb(16, 38, 28),
+                                AppTheme::Light => Color32::from_rgb(228, 248, 236),
+                            }
+                        } else {
+                            Color32::from_rgb(45, 20, 15)
+                        })
+                        .stroke(Stroke::new(1.5_f32, if status_is_green { theme.accent_secondary() } else { Color32::from_rgb(239, 68, 68) }))
+                        .corner_radius(CornerRadius::same(8))
+                        .inner_margin(Margin::same(12))
+                        .show(ui, |ui| {
+                            ui.horizontal(|ui| {
+                                ui.label(
+                                    RichText::new(&status_title)
+                                        .size(15.5)
+                                        .color(if status_is_green { theme.accent_secondary() } else { Color32::from_rgb(255, 120, 120) })
+                                        .strong(),
+                                );
+                            });
+                            ui.add_space(4.0);
                             ui.label(
-                                RichText::new(&status_title)
-                                    .size(16.0)
-                                    .color(if status_is_green { theme.accent_secondary() } else { Color32::from_rgb(255, 120, 120) })
-                                    .strong(),
+                                RichText::new(&status_sub)
+                                    .size(13.0)
+                                    .color(theme.text_primary()),
                             );
                         });
-                        ui.add_space(4.0);
-                        ui.label(
-                            RichText::new(&status_sub)
-                                .size(13.5)
-                                .color(theme.text_primary()),
-                        );
-                    });
 
                 ui.add_space(10.0);
 
