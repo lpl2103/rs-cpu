@@ -1,4 +1,4 @@
-# ⚡ M-CPU (Modern CPU-Z & Hardware Suite)
+# ⚡ RS-CPU (Rust Hardware Diagnostic & Benchmark Suite)
 
 <div align="center">
 
@@ -16,7 +16,9 @@
 
 ## 🌟 Visão Geral
 
-O **M-CPU** combina a precisão do clássico CPU-Z, a riqueza gráfica do GPU-Z, a inteligência de armazenamento do CrystalDiskInfo/CrystalDiskMark e a estabilidade térmica do OCCT em uma interface gráfica moderna, acelerada por GPU, com suporte a temas Claro/Escuro, abertura instantânea (< 15ms) e zero dependência de drivers invasivos em nível de kernel.
+O **RS-CPU** é uma aplicação nativa de alta performance que une inspeção profunda de processador, placa-mãe, memória RAM, placas gráficas, unidades de armazenamento (SSD/NVMe/HDD), análise de fontes de alimentação (PSU) e benchmarks sintéticos em uma interface moderna acelerada por GPU, com inicialização instantânea (< 15ms) e zero dependência de drivers invasivos em nível de kernel.
+
+> **⚖️ Aviso Legal / Disclaimer**: *CPU-Z® e GPU-Z™ são marcas registradas de seus respectivos proprietários (CPUID SAS e TechPowerUp). O **RS-CPU** é um projeto de código aberto totalmente independente, desenvolvido do zero em linguagem Rust, e não possui nenhuma relação, afiliação, patrocínio ou endosso por parte da CPUID SAS ou TechPowerUp.*
 
 ---
 
@@ -39,7 +41,7 @@ O **M-CPU** combina a precisão do clássico CPU-Z, a riqueza gráfica do GPU-Z,
 - **Tabela SPD por Slot**: Fabricante dos módulos e chips DRAM (Samsung, Micron, SK Hynix), Part Number e perfis JEDEC/XMP/EXPO.
 - **🔥 Teste de Estabilidade de RAM**: Alocador determinístico com padrões de estresse (*Bit Flip*, *Walking Inversion* e *Random Bit Pattern*) em chunks paralelos via Rayon.
 
-### 4. 🎮 Placa Gráfica (GPU-Z) & Viewport 3D
+### 4. 🎮 Placa Gráfica (GPU) & Viewport 3D
 - **Base de Hardware Expandida**: Suporte a NVIDIA RTX 50/40/30/20, GTX 16/10, AMD Radeon RX 7000/6000/5000 e Intel Arc/Battlemage.
 - **Métricas Gráficas**: Shaders/CUDA Cores, Texture Fillrate, Pixel Fillrate, largura do barramento, tipo de memória e VRAM.
 - **Badges Oficiais Dinâmicos**: Classificação automática de marcas e linhas (NVIDIA GeForce RTX/GTX, AMD Radeon, Intel Arc Graphics).
@@ -49,12 +51,12 @@ O **M-CPU** combina a precisão do clássico CPU-Z, a riqueza gráfica do GPU-Z,
 - **Win32 IOCTL Direto**: Leitura física rápida via `STORAGE_DEVICE_DESCRIPTOR` e `IOCTL_DISK_GET_LENGTH_INFO`.
 - **Mapeamento de Partições**: Mapeamento nativo de volumes (C:, D:, etc.) vinculados individualmente a cada disco físico.
 - **Diagnósticos de Saúde & Alertas S.M.A.R.T.**: Monitoramento de temperatura, setores realocados, desgaste de células NAND e quedas de energia inseguras.
-- **🚀 Benchmark de Disco Integrado (Estilo CrystalDiskMark)**:
+- **🚀 Benchmark de Disco Integrado**:
   - Leitura/Escrita Sequencial (1 MiB, Q8T1).
   - Leitura/Escrita Randômica (4 KiB, Q32T1).
   - Histórico de benchmarks anteriores salvo para comparações.
 
-### 6. ⚡ Energia & Fonte de Alimentação (PSU / OCCT)
+### 6. ⚡ Energia & Fonte de Alimentação (PSU)
 - **Teste de Estabilidade da Fonte (PSU Stability Test)**: Carga sintética contínua em todos os núcleos lógicos.
 - **Detecção de Vdroop**: Cálculo da variação percentual na linha de +12V e detecção automática de anomalias elétricas.
 - **Gráficos de Telemetria com Linhas de Grade e Eixo Y**: Curvas em tempo real de temperatura, tensão +12V e consumo total de energia (W).
@@ -75,7 +77,7 @@ O **M-CPU** combina a precisão do clássico CPU-Z, a riqueza gráfica do GPU-Z,
 ## ⚡ Performance & Arquitetura
 
 - **Inicialização Sub-15ms**: Substituição de comandos lentos em subprocessos por chamadas nativas de baixo nível na API Win32 e Sysfs.
-- **Zero-Allocation Hot Paths**: Caches em memória, reuso de vetores e arrays na stack `[Pos2; 8]` e `[(usize, f32); 6]` para renderização fluida sem sobrecarregar o garbage collector.
+- **Zero-Allocation Hot Paths**: Caches em memória, reuso de vetores e arrays na stack `[Pos2; 8]` e `[(usize, f32); 6]` para renderização fluida sem sobrecarregar o coletor de lixo.
 - **Thread Safety**: Multithreading nativo com Rayon ThreadPools, controle de cancelamento atômico (`AtomicBool`) e mutexes protegidos contra envenenamento (`unwrap_or_else`).
 
 ---
@@ -97,7 +99,7 @@ cargo build --release
 ```
 O executável final autossuficiente e otimizado com LTO e strip será gerado em:
 ```text
-target/release/modern-cpu-z.exe
+target/release/rs-cpu.exe
 ```
 
 ### Executar Testes Automatizados

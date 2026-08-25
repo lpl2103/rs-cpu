@@ -1,6 +1,6 @@
-//! Modern CPU-Z Core Library.
+//! RS-CPU Core Library.
 //!
-//! High-performance, cross-platform hardware diagnostic, profiling, and telemetry engine.
+//! High-performance, cross-platform hardware diagnostic, profiling, and telemetry engine in Rust.
 
 #![warn(
     clippy::all,
@@ -24,5 +24,6 @@ pub mod error;
 pub mod hardware;
 pub mod ui;
 
-pub use app::ModernCpuZApp;
+pub use app::RsCpuApp;
+pub use app::RsCpuApp as ModernCpuZApp;
 pub use error::{AppError, Result};

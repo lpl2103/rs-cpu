@@ -160,7 +160,7 @@ pub fn brand_logo_badge(ui: &mut Ui, vendor: &str, name: &str) {
         (
             Color32::from_rgb(25, 30, 42),
             Color32::from_rgb(70, 85, 110),
-            "M-CPU",
+            "RS-CPU",
             "HARDWARE",
             Color32::from_rgb(240, 245, 255),
         )

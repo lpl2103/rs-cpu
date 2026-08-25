@@ -28,7 +28,7 @@ pub fn render(
         theme.card_frame().show(ui, |ui| {
             ui.vertical_centered(|ui| {
                 ui.label(
-                    RichText::new("⚡ M-CPU")
+                    RichText::new("⚡ RS-CPU")
                         .size(24.0)
                         .color(theme.accent_primary())
                         .strong(),
@@ -258,7 +258,7 @@ fn generate_html_report(hardware: &SystemHardware) -> String {
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
-<title>M-CPU Relatório de Diagnóstico - {}</title>
+<title>RS-CPU Relatório de Diagnóstico - {}</title>
 <style>
 body {{ font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background: #0f1117; color: #f3f4f6; margin: 0; padding: 24px; }}
 .container {{ max-width: 900px; margin: 0 auto; }}
@@ -275,7 +275,7 @@ tr:nth-child(even) td {{ background: rgba(255,255,255,0.02); }}
 </head>
 <body>
 <div class="container">
-<h1>⚡ M-CPU Diagnóstico de Hardware</h1>
+<h1>⚡ RS-CPU Diagnóstico de Hardware</h1>
 <div class="subtitle">Gerado em: {} • Sistema: {} ({})</div>
 
 <div class="card">
@@ -353,11 +353,11 @@ tr:nth-child(even) td {{ background: rgba(255,255,255,0.02); }}
     )
 }
 
-/// Generates human-readable plain text report mimicking M-CPU text dumps.
+/// Generates human-readable plain text report mimicking RS-CPU text dumps.
 fn generate_text_report(hardware: &SystemHardware) -> String {
     let mut out = String::new();
     out.push_str("--------------------------------------------------\n");
-    out.push_str(" M-CPU RELATORIO DE DIAGNOSTICO DE HARDWARE\n");
+    out.push_str(" RS-CPU RELATORIO DE DIAGNOSTICO DE HARDWARE\n");
     let _ = writeln!(out, " Gerado em: {}", chrono::Local::now().to_rfc2822());
     out.push_str("--------------------------------------------------\n\n");
 

@@ -35,8 +35,8 @@ pub enum ActiveTab {
     About,
 }
 
-/// Main Application state for M-CPU.
-pub struct ModernCpuZApp {
+/// Main Application state for RS-CPU.
+pub struct RsCpuApp {
     /// Hardware telemetry and introspection engine.
     pub engine: HardwareEngine,
     /// CPU Benchmark manager.
@@ -63,8 +63,8 @@ pub struct ModernCpuZApp {
     pub last_applied_zoom: f32,
 }
 
-impl ModernCpuZApp {
-    /// Creates and initializes the application with Segoe UI typography and hardware engine.
+impl RsCpuApp {
+    /// Initializes a new [`RsCpuApp`] instance and registers custom styling.
     #[must_use]
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
         tracing::info!("Initializing M-CPU Hardware Engine & Typography...");
@@ -144,7 +144,7 @@ impl ModernCpuZApp {
     }
 }
 
-impl eframe::App for ModernCpuZApp {
+impl eframe::App for RsCpuApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         // Dynamic continuous responsive zoom scaling based on window width
         let screen_width = ctx.screen_rect().width();
@@ -179,7 +179,7 @@ impl eframe::App for ModernCpuZApp {
                 // Tier 1: App Header & Right Actions
                 ui.horizontal(|ui| {
                     ui.label(
-                        RichText::new("⚡ M-CPU")
+                        RichText::new("⚡ RS-CPU")
                             .size(19.0)
                             .color(self.theme.accent_primary())
                             .strong(),

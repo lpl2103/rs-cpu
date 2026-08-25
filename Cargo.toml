@@ -1,11 +1,11 @@
 [package]
-name = "modern-cpu-z"
+name = "rs-cpu"
 version = "0.1.0"
 edition = "2021"
 authors = ["Leandro"]
-description = "Modern, high-performance hardware diagnostic and telemetry tool in Rust"
+description = "RS-CPU: Modern, high-performance hardware diagnostic and telemetry suite in Rust"
 readme = "README.md"
-license = "MIT OR Apache-2.0"
+license = "MIT"
 
 [dependencies]
 # GUI Framework

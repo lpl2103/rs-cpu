@@ -1,8 +1,8 @@
-//! M-CPU Application Entrypoint.
+//! RS-CPU Application Entrypoint.
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use modern_cpu_z::ModernCpuZApp;
+use rs_cpu::RsCpuApp;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 fn main() -> eframe::Result {
@@ -10,18 +10,18 @@ fn main() -> eframe::Result {
     tracing_subscriber::registry()
         .with(
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "modern_cpu_z=info,warn".into()),
+                .unwrap_or_else(|_| "rs_cpu=info,warn".into()),
         )
         .with(tracing_subscriber::fmt::layer().with_target(false))
         .init();
 
-    tracing::info!("Iniciando M-CPU v0.1.0...");
+    tracing::info!("Iniciando RS-CPU v0.1.0...");
 
-    let app_icon = modern_cpu_z::ui::create_app_icon();
+    let app_icon = rs_cpu::ui::create_app_icon();
 
     let native_options = eframe::NativeOptions {
         viewport: eframe::egui::ViewportBuilder::default()
-            .with_title("M-CPU")
+            .with_title("RS-CPU")
             .with_icon(app_icon)
             .with_inner_size([1120.0, 860.0])
             .with_min_inner_size([880.0, 640.0])
@@ -30,8 +30,8 @@ fn main() -> eframe::Result {
     };
 
     eframe::run_native(
-        "M-CPU",
+        "RS-CPU",
         native_options,
-        Box::new(|cc| Ok(Box::new(ModernCpuZApp::new(cc)))),
+        Box::new(|cc| Ok(Box::new(RsCpuApp::new(cc)))),
     )
 }
