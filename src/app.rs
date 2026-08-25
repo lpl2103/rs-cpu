@@ -57,6 +57,10 @@ pub struct ModernCpuZApp {
     pub about_state: AboutTabState,
     /// Timestamp of last telemetry update.
     pub last_update: Instant,
+    /// Cached last applied theme to avoid redundant recomputations.
+    pub last_applied_theme: Option<AppTheme>,
+    /// Cached last applied zoom factor.
+    pub last_applied_zoom: f32,
 }
 
 impl ModernCpuZApp {
@@ -134,13 +138,15 @@ impl ModernCpuZApp {
             graphics_state: GraphicsTabState::default(),
             about_state: AboutTabState::default(),
             last_update: Instant::now(),
+            last_applied_theme: None,
+            last_applied_zoom: 1.0,
         }
     }
 }
 
 impl eframe::App for ModernCpuZApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        // Dynamic responsive zoom scaling based on window width
+        // Dynamic responsive zoom scaling based on window width (only applied if changed)
         let screen_width = ctx.screen_rect().width();
         let responsive_zoom = if screen_width >= 1600.0 {
             1.15
@@ -151,7 +157,10 @@ impl eframe::App for ModernCpuZApp {
         } else {
             1.00
         };
-        ctx.set_zoom_factor(responsive_zoom);
+        if (self.last_applied_zoom - responsive_zoom).abs() > f32::EPSILON {
+            ctx.set_zoom_factor(responsive_zoom);
+            self.last_applied_zoom = responsive_zoom;
+        }
 
         // Periodic non-blocking telemetry refresh (every 500ms)
         if self.last_update.elapsed() >= Duration::from_millis(500) {
@@ -159,8 +168,11 @@ impl eframe::App for ModernCpuZApp {
             self.last_update = Instant::now();
         }
 
-        // Apply theme styling
-        self.theme.apply(ctx);
+        // Apply theme styling only when it has changed
+        if self.last_applied_theme != Some(self.theme) {
+            self.theme.apply(ctx);
+            self.last_applied_theme = Some(self.theme);
+        }
 
         // Top Navigation Bar
         TopBottomPanel::top("top_panel")

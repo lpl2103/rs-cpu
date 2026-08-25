@@ -133,7 +133,8 @@ impl BenchManager {
 
         std::thread::spawn(move || {
             // 1. Single Thread Benchmark
-            if let Ok(mut s) = status.lock() {
+            {
+                let mut s = status.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
                 *s = BenchStatus::RunningSingle { progress: 0.0 };
             }
 
@@ -143,22 +144,22 @@ impl BenchManager {
 
             while start.elapsed() < duration {
                 if cancel.load(Ordering::Relaxed) {
-                    if let Ok(mut s) = status.lock() {
-                        *s = BenchStatus::Idle;
-                    }
+                    *status.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = BenchStatus::Idle;
                     return;
                 }
                 benchmark_worker_chunk(25_000);
                 iterations += 25_000;
 
                 let progress = (start.elapsed().as_secs_f32() / duration.as_secs_f32()).min(1.0);
-                if let Ok(mut s) = status.lock() {
+                {
+                    let mut s = status.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
                     *s = BenchStatus::RunningSingle { progress };
                 }
             }
 
             let single_calculated = (iterations as f64) / 12_500.0;
-            if let Ok(mut sc) = single_score.lock() {
+            {
+                let mut sc = single_score.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
                 *sc = single_calculated.round();
             }
 
@@ -166,7 +167,8 @@ impl BenchManager {
             std::thread::sleep(Duration::from_millis(200));
 
             // 2. Multi Thread Benchmark
-            if let Ok(mut s) = status.lock() {
+            {
+                let mut s = status.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
                 *s = BenchStatus::RunningMulti { progress: 0.0 };
             }
 
@@ -181,9 +183,7 @@ impl BenchManager {
             if let Ok(p) = pool {
                 while start_multi.elapsed() < multi_duration {
                     if cancel.load(Ordering::Relaxed) {
-                        if let Ok(mut s) = status.lock() {
-                            *s = BenchStatus::Idle;
-                        }
+                        *status.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = BenchStatus::Idle;
                         return;
                     }
 
@@ -196,18 +196,23 @@ impl BenchManager {
                     });
 
                     let progress = (start_multi.elapsed().as_secs_f32() / multi_duration.as_secs_f32()).min(1.0);
-                    if let Ok(mut s) = status.lock() {
+                    {
+                        let mut s = status.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
                         *s = BenchStatus::RunningMulti { progress };
                     }
                 }
+            } else {
+                tracing::error!("Falha ao construir Rayon Thread Pool para o benchmark multi-thread");
             }
 
             let multi_calculated = (total_multi_iters.load(Ordering::SeqCst) as f64) / 15_000.0;
-            if let Ok(mut mc) = multi_score.lock() {
+            {
+                let mut mc = multi_score.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
                 *mc = multi_calculated.round();
             }
 
-            if let Ok(mut s) = status.lock() {
+            {
+                let mut s = status.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
                 *s = BenchStatus::Completed;
             }
         });
@@ -215,20 +220,22 @@ impl BenchManager {
 
     /// Toggles CPU Stress Test.
     pub fn toggle_stress(&self, thread_count: usize) {
-        let is_running = self
-            .status
-            .lock()
-            .is_ok_and(|s| matches!(*s, BenchStatus::StressTesting { .. }));
+        let is_running = {
+            let s = self.status.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+            matches!(*s, BenchStatus::StressTesting { .. })
+        };
 
         if is_running {
             self.cancel_flag.store(true, Ordering::SeqCst);
-            if let Ok(mut s) = self.status.lock() {
-                *s = BenchStatus::Idle;
-            }
         } else {
             let status = Arc::clone(&self.status);
             let cancel = Arc::clone(&self.cancel_flag);
             cancel.store(false, Ordering::SeqCst);
+
+            {
+                let mut s = status.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+                *s = BenchStatus::StressTesting { elapsed_secs: 0 };
+            }
 
             std::thread::spawn(move || {
                 let start = Instant::now();
@@ -244,15 +251,19 @@ impl BenchManager {
                             });
                         });
 
-                        if let Ok(mut s) = status.lock() {
+                        {
+                            let mut s = status.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
                             *s = BenchStatus::StressTesting {
                                 elapsed_secs: start.elapsed().as_secs(),
                             };
                         }
                     }
+                } else {
+                    tracing::error!("Falha ao construir Rayon Thread Pool para o teste de estresse da CPU");
                 }
 
-                if let Ok(mut s) = status.lock() {
+                {
+                    let mut s = status.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
                     *s = BenchStatus::Idle;
                 }
             });
