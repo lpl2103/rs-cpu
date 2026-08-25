@@ -146,18 +146,11 @@ impl ModernCpuZApp {
 
 impl eframe::App for ModernCpuZApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        // Dynamic responsive zoom scaling based on window width (only applied if changed)
+        // Dynamic continuous responsive zoom scaling based on window width
         let screen_width = ctx.screen_rect().width();
-        let responsive_zoom = if screen_width >= 1600.0 {
-            1.15
-        } else if screen_width >= 1200.0 {
-            1.08
-        } else if screen_width >= 1000.0 {
-            1.04
-        } else {
-            1.00
-        };
-        if (self.last_applied_zoom - responsive_zoom).abs() > f32::EPSILON {
+        let width_factor = ((screen_width - 800.0) / 1000.0).clamp(0.0, 1.0);
+        let responsive_zoom = ((1.0 + (width_factor * 0.15)) * 100.0).round() / 100.0;
+        if (self.last_applied_zoom - responsive_zoom).abs() >= 0.01 {
             ctx.set_zoom_factor(responsive_zoom);
             self.last_applied_zoom = responsive_zoom;
         }

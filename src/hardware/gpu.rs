@@ -159,15 +159,8 @@ struct DeducibleGpuSpecs {
 
 #[cfg(target_os = "windows")]
 fn detect_windows_gpus() -> Option<Vec<GpuInfo>> {
-    // 1. Try Ultra-Fast Native Win32 Registry Introspection (< 0.5 ms)
-    if let Some(native_gpus) = detect_native_registry_gpus() {
-        if !native_gpus.is_empty() {
-            return Some(native_gpus);
-        }
-    }
-
-    // 2. Fallback to PowerShell if native registry is unavailable
-    detect_powershell_gpus()
+    // Native Win32 Registry Introspection (< 0.5 ms) — no PowerShell fallback
+    detect_native_registry_gpus()
 }
 
 #[cfg(target_os = "windows")]
@@ -201,6 +194,16 @@ fn detect_native_registry_gpus() -> Option<Vec<GpuInfo>> {
             pv_data: *mut c_void,
             pcb_data: *mut u32,
         ) -> i32;
+    }
+
+    /// RAII guard that automatically closes registry key handles on drop, preventing leaks on panic.
+    struct RegKeyGuard(Hkey);
+    impl Drop for RegKeyGuard {
+        fn drop(&mut self) {
+            if !self.0.is_null() {
+                unsafe { RegCloseKey(self.0); }
+            }
+        }
     }
 
     fn to_wide(s: &str) -> Vec<u16> {
@@ -296,142 +299,70 @@ fn detect_native_registry_gpus() -> Option<Vec<GpuInfo>> {
             )
         };
 
-        if status == ERROR_SUCCESS && !h_sub_key.is_null() {
-            if let Some(desc) = read_reg_string(h_sub_key, "DriverDesc") {
-                // Ignore software renderers or mirror drivers
-                if !desc.contains("Basic Display")
-                    && !desc.contains("RdpIdd")
-                    && !desc.contains("Virtual")
-                    && !desc.contains("Miracast")
-                {
-                    let vram_bytes = read_reg_u64(h_sub_key, "HardwareInformation.qwMemorySize")
-                        .or_else(|| read_reg_u64(h_sub_key, "HardwareInformation.MemorySize"))
-                        .unwrap_or(0);
-
-                    let vram_mb = if vram_bytes > 0 {
-                        vram_bytes / (1024 * 1024)
-                    } else {
-                        8192
-                    };
-
-                    let driver_version = read_reg_string(h_sub_key, "DriverVersion")
-                        .unwrap_or_else(|| "WHQL".to_string());
-                    let driver_date = read_reg_string(h_sub_key, "DriverDate")
-                        .unwrap_or_else(|| "Recente (WHQL)".to_string());
-
-                    let specs = deduce_gpu_details(&desc);
-
-                    gpus.push(GpuInfo {
-                        name: desc,
-                        vendor: specs.vendor,
-                        subvendor: specs.subvendor,
-                        code_name: specs.code_name,
-                        technology: specs.technology,
-                        die_size: specs.die_size,
-                        transistors: specs.transistors,
-                        shaders: specs.shaders,
-                        texture_fillrate: specs.texture_fillrate,
-                        pixel_fillrate: specs.pixel_fillrate,
-                        vram_mb,
-                        memory_type: specs.memory_type,
-                        bus_width: specs.bus_width,
-                        bandwidth_gbs: specs.bandwidth_gbs,
-                        base_clock_mhz: specs.base_clock_mhz,
-                        boost_clock_mhz: specs.boost_clock_mhz,
-                        memory_clock_mhz: specs.memory_clock_mhz,
-                        driver_version,
-                        driver_date,
-                        technologies: specs.technologies,
-                        live_temp_c: 41.0,
-                        live_load_pct: 6.0,
-                        live_fan_rpm: 0,
-                        live_power_w: 22.0,
-                    });
-                }
-            }
-            unsafe {
-                RegCloseKey(h_sub_key);
-            }
+        if status != ERROR_SUCCESS || h_sub_key.is_null() {
+            continue;
         }
-    }
 
-    if gpus.is_empty() {
-        None
-    } else {
-        Some(gpus)
-    }
-}
+        // RAII guard: key is automatically closed when _guard goes out of scope
+        let _guard = RegKeyGuard(h_sub_key);
 
-#[cfg(target_os = "windows")]
-fn detect_powershell_gpus() -> Option<Vec<GpuInfo>> {
-    use std::os::windows::process::CommandExt;
-    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        let Some(desc) = read_reg_string(h_sub_key, "DriverDesc") else {
+            continue;
+        };
 
-    let mut gpus = Vec::new();
-
-    let output = std::process::Command::new("powershell")
-        .creation_flags(CREATE_NO_WINDOW)
-        .args([
-            "-NoProfile",
-            "-NonInteractive",
-            "-WindowStyle",
-            "Hidden",
-            "-Command",
-            "Get-CimInstance Win32_VideoController | Select-Object -Property Name, AdapterRAM, DriverVersion, DriverDate | ConvertTo-Json",
-        ])
-        .output();
-
-    if let Ok(out) = output {
-        if let Ok(json_str) = String::from_utf8(out.stdout) {
-            if let Ok(val) = serde_json::from_str::<serde_json::Value>(&json_str) {
-                let items = if val.is_array() {
-                    val.as_array().cloned().unwrap_or_default()
-                } else if val.is_object() {
-                    vec![val]
-                } else {
-                    Vec::new()
-                };
-
-                for item in items {
-                    let name = item["Name"].as_str().unwrap_or("Display Adapter").trim().to_string();
-                    let vram_bytes = item["AdapterRAM"]
-                        .as_u64()
-                        .or_else(|| item["AdapterRAM"].as_f64().map(|v| v as u64))
-                        .unwrap_or(0);
-                    let vram_mb = if vram_bytes > 0 { vram_bytes / (1024 * 1024) } else { 8192 };
-                    let driver_version = item["DriverVersion"].as_str().unwrap_or("WHQL").trim().to_string();
-
-                    let specs = deduce_gpu_details(&name);
-
-                    gpus.push(GpuInfo {
-                        name,
-                        vendor: specs.vendor,
-                        subvendor: specs.subvendor,
-                        code_name: specs.code_name,
-                        technology: specs.technology,
-                        die_size: specs.die_size,
-                        transistors: specs.transistors,
-                        shaders: specs.shaders,
-                        texture_fillrate: specs.texture_fillrate,
-                        pixel_fillrate: specs.pixel_fillrate,
-                        vram_mb,
-                        memory_type: specs.memory_type,
-                        bus_width: specs.bus_width,
-                        bandwidth_gbs: specs.bandwidth_gbs,
-                        base_clock_mhz: specs.base_clock_mhz,
-                        boost_clock_mhz: specs.boost_clock_mhz,
-                        memory_clock_mhz: specs.memory_clock_mhz,
-                        driver_version,
-                        driver_date: "Recente (WHQL)".to_string(),
-                        technologies: specs.technologies,
-                        live_temp_c: 41.0,
-                        live_load_pct: 6.0,
-                        live_fan_rpm: 0,
-                        live_power_w: 22.0,
-                    });
-                }
-            }
+        // Ignore software renderers or mirror drivers
+        if desc.contains("Basic Display")
+            || desc.contains("RdpIdd")
+            || desc.contains("Virtual")
+            || desc.contains("Miracast")
+        {
+            continue;
         }
+
+        let vram_bytes = read_reg_u64(h_sub_key, "HardwareInformation.qwMemorySize")
+            .or_else(|| read_reg_u64(h_sub_key, "HardwareInformation.MemorySize"))
+            .unwrap_or(0);
+
+        let vram_mb = if vram_bytes > 0 {
+            vram_bytes / (1024 * 1024)
+        } else {
+            0
+        };
+
+        let driver_version = read_reg_string(h_sub_key, "DriverVersion")
+            .unwrap_or_else(|| "N/D".to_string());
+        let driver_date = read_reg_string(h_sub_key, "DriverDate")
+            .unwrap_or_else(|| "N/D".to_string());
+
+        let specs = deduce_gpu_details(&desc);
+
+        gpus.push(GpuInfo {
+            name: desc,
+            vendor: specs.vendor,
+            subvendor: specs.subvendor,
+            code_name: specs.code_name,
+            technology: specs.technology,
+            die_size: specs.die_size,
+            transistors: specs.transistors,
+            shaders: specs.shaders,
+            texture_fillrate: specs.texture_fillrate,
+            pixel_fillrate: specs.pixel_fillrate,
+            vram_mb,
+            memory_type: specs.memory_type,
+            bus_width: specs.bus_width,
+            bandwidth_gbs: specs.bandwidth_gbs,
+            base_clock_mhz: specs.base_clock_mhz,
+            boost_clock_mhz: specs.boost_clock_mhz,
+            memory_clock_mhz: specs.memory_clock_mhz,
+            driver_version,
+            driver_date,
+            technologies: specs.technologies,
+            live_temp_c: 41.0,
+            live_load_pct: 6.0,
+            live_fan_rpm: 0,
+            live_power_w: 22.0,
+        });
+        // _guard dropped here → RegCloseKey called automatically
     }
 
     if gpus.is_empty() {
@@ -469,7 +400,45 @@ fn deduce_gpu_details(name: &str) -> DeducibleGpuSpecs {
         "Resizable BAR".to_string(),
     ];
 
-    if lower.contains("4090") {
+    if lower.contains("5090") {
+        DeducibleGpuSpecs {
+            vendor: "NVIDIA".to_string(),
+            subvendor: "NVIDIA Founder / ASUS".to_string(),
+            code_name: "GB202 (Blackwell)".to_string(),
+            technology: "TSMC 4NP (3nm)".to_string(),
+            die_size: "744 mm²".to_string(),
+            transistors: "92.0 Billion".to_string(),
+            shaders: 21760,
+            texture_fillrate: 1850.0,
+            pixel_fillrate: 590.0,
+            memory_type: "GDDR7 (Micron)".to_string(),
+            bus_width: "512-bit".to_string(),
+            bandwidth_gbs: 1792.0,
+            base_clock_mhz: 2200,
+            boost_clock_mhz: 2600,
+            memory_clock_mhz: 14000,
+            technologies: techs,
+        }
+    } else if lower.contains("5080") {
+        DeducibleGpuSpecs {
+            vendor: "NVIDIA".to_string(),
+            subvendor: "ASUSTeK / MSI".to_string(),
+            code_name: "GB203 (Blackwell)".to_string(),
+            technology: "TSMC 4NP (3nm)".to_string(),
+            die_size: "378 mm²".to_string(),
+            transistors: "48.0 Billion".to_string(),
+            shaders: 10752,
+            texture_fillrate: 1100.0,
+            pixel_fillrate: 360.0,
+            memory_type: "GDDR7".to_string(),
+            bus_width: "256-bit".to_string(),
+            bandwidth_gbs: 1024.0,
+            base_clock_mhz: 2295,
+            boost_clock_mhz: 2680,
+            memory_clock_mhz: 15000,
+            technologies: techs,
+        }
+    } else if lower.contains("4090") {
         DeducibleGpuSpecs {
             vendor: "NVIDIA".to_string(),
             subvendor: "NVIDIA Founder / ASUS".to_string(),
@@ -526,6 +495,177 @@ fn deduce_gpu_details(name: &str) -> DeducibleGpuSpecs {
             memory_clock_mhz: 10500,
             technologies: techs,
         }
+    } else if lower.contains("4060") {
+        DeducibleGpuSpecs {
+            vendor: "NVIDIA".to_string(),
+            subvendor: "Palit / Galax".to_string(),
+            code_name: "AD107 (Ada Lovelace)".to_string(),
+            technology: "TSMC 4N (5nm)".to_string(),
+            die_size: "159 mm²".to_string(),
+            transistors: "18.9 Billion".to_string(),
+            shaders: 3072,
+            texture_fillrate: 236.2,
+            pixel_fillrate: 78.7,
+            memory_type: "GDDR6".to_string(),
+            bus_width: "128-bit".to_string(),
+            bandwidth_gbs: 272.0,
+            base_clock_mhz: 1830,
+            boost_clock_mhz: 2460,
+            memory_clock_mhz: 8500,
+            technologies: techs,
+        }
+    } else if lower.contains("3090") || lower.contains("3080") {
+        DeducibleGpuSpecs {
+            vendor: "NVIDIA".to_string(),
+            subvendor: "EVGA / ASUS".to_string(),
+            code_name: "GA102 (Ampere)".to_string(),
+            technology: "Samsung 8nm".to_string(),
+            die_size: "628 mm²".to_string(),
+            transistors: "28.3 Billion".to_string(),
+            shaders: 10496,
+            texture_fillrate: 558.4,
+            pixel_fillrate: 186.1,
+            memory_type: "GDDR6X".to_string(),
+            bus_width: "384-bit".to_string(),
+            bandwidth_gbs: 936.2,
+            base_clock_mhz: 1400,
+            boost_clock_mhz: 1700,
+            memory_clock_mhz: 9750,
+            technologies: techs,
+        }
+    } else if lower.contains("3070") || lower.contains("3060") {
+        DeducibleGpuSpecs {
+            vendor: "NVIDIA".to_string(),
+            subvendor: "MSI / Gigabyte".to_string(),
+            code_name: "GA104/GA106 (Ampere)".to_string(),
+            technology: "Samsung 8nm".to_string(),
+            die_size: "392 mm²".to_string(),
+            transistors: "17.4 Billion".to_string(),
+            shaders: 5888,
+            texture_fillrate: 326.4,
+            pixel_fillrate: 108.8,
+            memory_type: "GDDR6".to_string(),
+            bus_width: "256-bit".to_string(),
+            bandwidth_gbs: 448.0,
+            base_clock_mhz: 1500,
+            boost_clock_mhz: 1750,
+            memory_clock_mhz: 7000,
+            technologies: techs,
+        }
+    } else if lower.contains("2080") || lower.contains("2070") || lower.contains("2060") {
+        DeducibleGpuSpecs {
+            vendor: "NVIDIA".to_string(),
+            subvendor: "NVIDIA / ZOTAC".to_string(),
+            code_name: "TU104/TU106 (Turing)".to_string(),
+            technology: "TSMC 12nm FFN".to_string(),
+            die_size: "445 mm²".to_string(),
+            transistors: "13.6 Billion".to_string(),
+            shaders: 3072,
+            texture_fillrate: 348.0,
+            pixel_fillrate: 116.0,
+            memory_type: "GDDR6".to_string(),
+            bus_width: "256-bit".to_string(),
+            bandwidth_gbs: 448.0,
+            base_clock_mhz: 1515,
+            boost_clock_mhz: 1800,
+            memory_clock_mhz: 7000,
+            technologies: techs,
+        }
+    } else if lower.contains("1660") || lower.contains("1650") {
+        DeducibleGpuSpecs {
+            vendor: "NVIDIA".to_string(),
+            subvendor: "MSI / EVGA".to_string(),
+            code_name: "TU116 / TU117 (Turing)".to_string(),
+            technology: "TSMC 12nm FFN".to_string(),
+            die_size: "284 mm²".to_string(),
+            transistors: "6.6 Billion".to_string(),
+            shaders: 1536,
+            texture_fillrate: 171.4,
+            pixel_fillrate: 85.7,
+            memory_type: "GDDR6 / GDDR5".to_string(),
+            bus_width: "192-bit".to_string(),
+            bandwidth_gbs: 336.0,
+            base_clock_mhz: 1530,
+            boost_clock_mhz: 1785,
+            memory_clock_mhz: 6000,
+            technologies: techs,
+        }
+    } else if lower.contains("1080") || lower.contains("1070") || lower.contains("1060") {
+        DeducibleGpuSpecs {
+            vendor: "NVIDIA".to_string(),
+            subvendor: "ASUS / Gigabyte / MSI".to_string(),
+            code_name: "GP104 / GP106 (Pascal)".to_string(),
+            technology: "TSMC 16nm".to_string(),
+            die_size: "314 mm²".to_string(),
+            transistors: "7.2 Billion".to_string(),
+            shaders: 2560,
+            texture_fillrate: 277.3,
+            pixel_fillrate: 110.9,
+            memory_type: "GDDR5X / GDDR5".to_string(),
+            bus_width: "256-bit".to_string(),
+            bandwidth_gbs: 320.0,
+            base_clock_mhz: 1607,
+            boost_clock_mhz: 1733,
+            memory_clock_mhz: 5000,
+            technologies: techs,
+        }
+    } else if lower.contains("1050 ti") || lower.contains("1050ti") {
+        DeducibleGpuSpecs {
+            vendor: "NVIDIA".to_string(),
+            subvendor: "Gigabyte / EVGA / ASUS / ZOTAC".to_string(),
+            code_name: "GP107 (Pascal)".to_string(),
+            technology: "Samsung 14nm".to_string(),
+            die_size: "132 mm²".to_string(),
+            transistors: "3.3 Billion".to_string(),
+            shaders: 768,
+            texture_fillrate: 62.0,
+            pixel_fillrate: 41.3,
+            memory_type: "GDDR5 (Samsung)".to_string(),
+            bus_width: "128-bit".to_string(),
+            bandwidth_gbs: 112.1,
+            base_clock_mhz: 1290,
+            boost_clock_mhz: 1392,
+            memory_clock_mhz: 7000,
+            technologies: techs,
+        }
+    } else if lower.contains("1050") {
+        DeducibleGpuSpecs {
+            vendor: "NVIDIA".to_string(),
+            subvendor: "MSI / ZOTAC".to_string(),
+            code_name: "GP107 (Pascal)".to_string(),
+            technology: "Samsung 14nm".to_string(),
+            die_size: "132 mm²".to_string(),
+            transistors: "3.3 Billion".to_string(),
+            shaders: 640,
+            texture_fillrate: 54.2,
+            pixel_fillrate: 43.3,
+            memory_type: "GDDR5".to_string(),
+            bus_width: "128-bit".to_string(),
+            bandwidth_gbs: 112.1,
+            base_clock_mhz: 1354,
+            boost_clock_mhz: 1455,
+            memory_clock_mhz: 7000,
+            technologies: techs,
+        }
+    } else if lower.contains("980") || lower.contains("970") || lower.contains("960") || lower.contains("750") {
+        DeducibleGpuSpecs {
+            vendor: "NVIDIA".to_string(),
+            subvendor: "NVIDIA / EVGA".to_string(),
+            code_name: "GM204 / GM206 (Maxwell)".to_string(),
+            technology: "TSMC 28nm".to_string(),
+            die_size: "398 mm²".to_string(),
+            transistors: "5.2 Billion".to_string(),
+            shaders: 2048,
+            texture_fillrate: 144.0,
+            pixel_fillrate: 72.0,
+            memory_type: "GDDR5".to_string(),
+            bus_width: "256-bit".to_string(),
+            bandwidth_gbs: 224.4,
+            base_clock_mhz: 1126,
+            boost_clock_mhz: 1216,
+            memory_clock_mhz: 7000,
+            technologies: techs,
+        }
     } else if lower.contains("7900") {
         DeducibleGpuSpecs {
             vendor: "AMD".to_string(),
@@ -545,12 +685,12 @@ fn deduce_gpu_details(name: &str) -> DeducibleGpuSpecs {
             memory_clock_mhz: 10000,
             technologies: techs,
         }
-    } else if lower.contains("7800") || lower.contains("7700") {
+    } else if lower.contains("7800") || lower.contains("7700") || lower.contains("7600") {
         DeducibleGpuSpecs {
             vendor: "AMD".to_string(),
             subvendor: "ASRock / XFX".to_string(),
-            code_name: "Navi 32 (RDNA 3)".to_string(),
-            technology: "TSMC 5nm".to_string(),
+            code_name: "Navi 32 / 33 (RDNA 3)".to_string(),
+            technology: "TSMC 5nm / 6nm".to_string(),
             die_size: "346 mm²".to_string(),
             transistors: "28.1 Billion".to_string(),
             shaders: 3840,
@@ -564,7 +704,83 @@ fn deduce_gpu_details(name: &str) -> DeducibleGpuSpecs {
             memory_clock_mhz: 9750,
             technologies: techs,
         }
-    } else if lower.contains("intel") || lower.contains("arc") || lower.contains("iris") {
+    } else if lower.contains("6900") || lower.contains("6800") || lower.contains("6700") || lower.contains("6600") {
+        DeducibleGpuSpecs {
+            vendor: "AMD".to_string(),
+            subvendor: "Sapphire / PowerColor".to_string(),
+            code_name: "Navi 21 / 22 (RDNA 2)".to_string(),
+            technology: "TSMC 7nm".to_string(),
+            die_size: "520 mm²".to_string(),
+            transistors: "26.8 Billion".to_string(),
+            shaders: 5120,
+            texture_fillrate: 720.0,
+            pixel_fillrate: 256.0,
+            memory_type: "GDDR6".to_string(),
+            bus_width: "256-bit".to_string(),
+            bandwidth_gbs: 512.0,
+            base_clock_mhz: 1825,
+            boost_clock_mhz: 2250,
+            memory_clock_mhz: 8000,
+            technologies: techs,
+        }
+    } else if lower.contains("5700") || lower.contains("5600") || lower.contains("5500") {
+        DeducibleGpuSpecs {
+            vendor: "AMD".to_string(),
+            subvendor: "Sapphire / XFX".to_string(),
+            code_name: "Navi 10 / 14 (RDNA 1)".to_string(),
+            technology: "TSMC 7nm".to_string(),
+            die_size: "251 mm²".to_string(),
+            transistors: "10.3 Billion".to_string(),
+            shaders: 2560,
+            texture_fillrate: 304.0,
+            pixel_fillrate: 121.6,
+            memory_type: "GDDR6".to_string(),
+            bus_width: "256-bit".to_string(),
+            bandwidth_gbs: 448.0,
+            base_clock_mhz: 1605,
+            boost_clock_mhz: 1905,
+            memory_clock_mhz: 7000,
+            technologies: techs,
+        }
+    } else if lower.contains("590") || lower.contains("580") || lower.contains("570") || lower.contains("560") || lower.contains("480") || lower.contains("470") {
+        DeducibleGpuSpecs {
+            vendor: "AMD".to_string(),
+            subvendor: "Sapphire / PowerColor".to_string(),
+            code_name: "Polaris 20 / 10 (GCN 4.0)".to_string(),
+            technology: "GlobalFoundries 14nm".to_string(),
+            die_size: "232 mm²".to_string(),
+            transistors: "5.7 Billion".to_string(),
+            shaders: 2304,
+            texture_fillrate: 193.0,
+            pixel_fillrate: 42.9,
+            memory_type: "GDDR5".to_string(),
+            bus_width: "256-bit".to_string(),
+            bandwidth_gbs: 256.0,
+            base_clock_mhz: 1257,
+            boost_clock_mhz: 1340,
+            memory_clock_mhz: 8000,
+            technologies: techs,
+        }
+    } else if lower.contains("b580") || lower.contains("b570") || lower.contains("battlemage") {
+        DeducibleGpuSpecs {
+            vendor: "Intel".to_string(),
+            subvendor: "Intel / Sparkle / ASRock".to_string(),
+            code_name: "Battlemage (BMG-G21)".to_string(),
+            technology: "TSMC N4 (4nm)".to_string(),
+            die_size: "272 mm²".to_string(),
+            transistors: "19.0 Billion".to_string(),
+            shaders: 3840,
+            texture_fillrate: 640.0,
+            pixel_fillrate: 160.0,
+            memory_type: "GDDR6".to_string(),
+            bus_width: "192-bit".to_string(),
+            bandwidth_gbs: 456.0,
+            base_clock_mhz: 2670,
+            boost_clock_mhz: 2850,
+            memory_clock_mhz: 9500,
+            technologies: techs,
+        }
+    } else if lower.contains("intel") || lower.contains("arc") || lower.contains("a770") || lower.contains("a750") || lower.contains("iris") || lower.contains("uhd") {
         DeducibleGpuSpecs {
             vendor: "Intel".to_string(),
             subvendor: "Intel Corporation".to_string(),
@@ -575,7 +791,7 @@ fn deduce_gpu_details(name: &str) -> DeducibleGpuSpecs {
             shaders: 4096,
             texture_fillrate: 537.6,
             pixel_fillrate: 134.4,
-            memory_type: "GDDR6".to_string(),
+            memory_type: "GDDR6 / Shared".to_string(),
             bus_width: "256-bit".to_string(),
             bandwidth_gbs: 560.0,
             base_clock_mhz: 2100,
@@ -584,10 +800,20 @@ fn deduce_gpu_details(name: &str) -> DeducibleGpuSpecs {
             technologies: techs,
         }
     } else {
+        let (vendor, code_name) = if lower.contains("geforce") || lower.contains("nvidia") || lower.contains("gtx") || lower.contains("rtx") {
+            ("NVIDIA".to_string(), "GeForce GPU Architecture".to_string())
+        } else if lower.contains("radeon") || lower.contains("amd") {
+            ("AMD".to_string(), "Radeon GPU Architecture".to_string())
+        } else if lower.contains("intel") || lower.contains("arc") || lower.contains("iris") || lower.contains("uhd") {
+            ("Intel".to_string(), "Intel Graphics".to_string())
+        } else {
+            ("Display Adapter".to_string(), "Graphics Architecture".to_string())
+        };
+
         DeducibleGpuSpecs {
-            vendor: "NVIDIA / AMD / Intel".to_string(),
+            vendor,
             subvendor: "OEM Display Device".to_string(),
-            code_name: "Modern Graphics Architecture".to_string(),
+            code_name,
             technology: "FinFET".to_string(),
             die_size: "250 mm²".to_string(),
             transistors: "15.0 Billion".to_string(),
@@ -602,5 +828,32 @@ fn deduce_gpu_details(name: &str) -> DeducibleGpuSpecs {
             memory_clock_mhz: 7000,
             technologies: techs,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_deduce_gtx_1050_ti() {
+        let specs = deduce_gpu_details("NVIDIA GeForce GTX 1050 Ti");
+        assert_eq!(specs.vendor, "NVIDIA");
+        assert!(specs.code_name.contains("GP107"));
+        assert_eq!(specs.shaders, 768);
+    }
+
+    #[test]
+    fn test_deduce_rtx_4090() {
+        let specs = deduce_gpu_details("NVIDIA GeForce RTX 4090");
+        assert_eq!(specs.vendor, "NVIDIA");
+        assert!(specs.code_name.contains("AD102"));
+    }
+
+    #[test]
+    fn test_deduce_rx_7900() {
+        let specs = deduce_gpu_details("AMD Radeon RX 7900 XTX");
+        assert_eq!(specs.vendor, "AMD");
+        assert!(specs.code_name.contains("Navi 31"));
     }
 }

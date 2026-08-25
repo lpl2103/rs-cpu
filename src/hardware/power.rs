@@ -2,6 +2,7 @@
 
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
+use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -149,7 +150,7 @@ pub struct PowerStressManager {
     /// Cancellation flag.
     pub cancel_flag: Arc<AtomicBool>,
     /// Accumulated historical data points during test.
-    pub history: Arc<Mutex<Vec<StressDataPoint>>>,
+    pub history: Arc<Mutex<VecDeque<StressDataPoint>>>,
     /// Last finished test report.
     pub last_report: Arc<Mutex<Option<PowerTestReport>>>,
     /// Whether the result modal is currently open.
@@ -166,7 +167,7 @@ impl Default for PowerStressManager {
             state: Arc::new(Mutex::new(PowerTestState::Idle)),
             rails: Arc::new(Mutex::new(PowerRailTelemetry::default())),
             cancel_flag: Arc::new(AtomicBool::new(false)),
-            history: Arc::new(Mutex::new(Vec::new())),
+            history: Arc::new(Mutex::new(VecDeque::new())),
             last_report: Arc::new(Mutex::new(None)),
             show_modal: Arc::new(Mutex::new(false)),
             selected_duration_secs: 3600, // Default: 1 hour
@@ -190,7 +191,7 @@ impl PowerStressManager {
         {
             let mut h = history.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
             h.clear();
-            h.push(StressDataPoint {
+            h.push_back(StressDataPoint {
                 elapsed_secs: 0,
                 cpu_load: 100.0,
                 cpu_temp: 46.0,
@@ -230,10 +231,15 @@ impl PowerStressManager {
                     }
 
                     // Intensive mathematical & AVX workload chunk to maximize power draw
+                    let cancel_ref = &cancel;
                     p.install(|| {
                         (0..thread_count).into_par_iter().for_each(|i| {
                             let mut acc: f64 = 1.000_001;
                             for j in 0..60_000 {
+                                // Check cancel flag every 10,000 iterations for responsive shutdown
+                                if j % 10_000 == 0 && cancel_ref.load(Ordering::Relaxed) {
+                                    return;
+                                }
                                 let f = (f64::from(j) + (i as f64)) * 0.000_01;
                                 acc = (acc * f + 0.123_456_789).sin().cosh().abs().fract();
                                 let _ = std::hint::black_box(acc);
@@ -280,10 +286,10 @@ impl PowerStressManager {
 
                         {
                             let mut h = history.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-                            if h.len() >= MAX_HISTORY_POINTS {
-                                h.remove(0);
+                            while h.len() >= MAX_HISTORY_POINTS {
+                                h.pop_front();
                             }
-                            h.push(data_point);
+                            h.push_back(data_point);
                         }
 
                         {
@@ -305,7 +311,7 @@ impl PowerStressManager {
             let elapsed_total = start.elapsed().as_secs();
 
             // Build final report
-            let h_snapshot = history.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone();
+            let h_snapshot: Vec<_> = history.lock().unwrap_or_else(std::sync::PoisonError::into_inner).iter().cloned().collect();
             let (max_temp, avg_temp, peak_pwr, min_12, max_12) = if h_snapshot.is_empty() {
                 (78.0, 72.0, 390.0, 11.98, 12.10)
             } else {

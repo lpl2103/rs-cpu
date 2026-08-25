@@ -78,38 +78,83 @@ pub fn section_header(ui: &mut Ui, theme: AppTheme, icon: &str, title: &str) {
 
 /// Renders a stylized brand logo badge (e.g. Intel Core, AMD Ryzen, NVIDIA `GeForce`, etc.).
 pub fn brand_logo_badge(ui: &mut Ui, vendor: &str, name: &str) {
-    let lower = format!("{vendor} {name}").to_lowercase();
-    let (bg_color, border_color, brand_text, sub_text, text_color) = if lower.contains("amd") || lower.contains("ryzen") {
-        (
-            Color32::from_rgb(45, 12, 10),
-            Color32::from_rgb(235, 50, 35),
-            "AMD",
-            if lower.contains("threadripper") { "THREADRIPPER" } else { "RYZEN" },
-            Color32::from_rgb(255, 235, 230),
-        )
-    } else if lower.contains("intel") || lower.contains("core") {
-        (
-            Color32::from_rgb(8, 28, 55),
-            Color32::from_rgb(0, 115, 230),
-            "intel",
-            if lower.contains("xeon") { "XEON" } else if lower.contains("ultra") { "CORE ULTRA" } else { "CORE" },
-            Color32::from_rgb(225, 242, 255),
-        )
-    } else if lower.contains("nvidia") || lower.contains("geforce") || lower.contains("rtx") {
+    let lower_name = name.to_lowercase();
+    let lower_vendor = vendor.to_lowercase();
+
+    let is_nvidia = lower_name.contains("nvidia")
+        || lower_name.contains("geforce")
+        || lower_name.contains("gtx")
+        || lower_name.contains("rtx")
+        || lower_name.contains("quadro")
+        || lower_name.contains("titan")
+        || (lower_vendor.contains("nvidia") && !lower_vendor.contains('/'));
+
+    let is_amd = !is_nvidia && (
+        lower_name.contains("amd")
+            || lower_name.contains("radeon")
+            || lower_name.contains("ryzen")
+            || lower_name.contains("threadripper")
+            || (lower_vendor.contains("amd") && !lower_vendor.contains('/'))
+    );
+
+    let is_intel = !is_nvidia && !is_amd && (
+        lower_name.contains("intel")
+            || lower_name.contains("arc")
+            || lower_name.contains("iris")
+            || lower_name.contains("xeon")
+            || lower_name.contains("core")
+            || (lower_vendor.contains("intel") && !lower_vendor.contains('/'))
+    );
+
+    let (bg_color, border_color, brand_text, sub_text, text_color) = if is_nvidia {
+        let sub = if lower_name.contains("gtx") {
+            "GEFORCE GTX"
+        } else if lower_name.contains("rtx") {
+            "GEFORCE RTX"
+        } else if lower_name.contains("quadro") {
+            "QUADRO"
+        } else {
+            "GEFORCE"
+        };
         (
             Color32::from_rgb(18, 38, 12),
             Color32::from_rgb(118, 185, 0),
             "NVIDIA",
-            "GEFORCE RTX",
+            sub,
             Color32::from_rgb(230, 255, 220),
         )
-    } else if lower.contains("radeon") {
+    } else if is_amd {
+        let is_gpu = lower_name.contains("radeon") || lower_name.contains("rx ") || lower_name.contains("vega");
+        let sub = if is_gpu {
+            "RADEON"
+        } else if lower_name.contains("threadripper") {
+            "THREADRIPPER"
+        } else {
+            "RYZEN"
+        };
         (
             Color32::from_rgb(45, 12, 10),
             Color32::from_rgb(235, 50, 35),
             "AMD",
-            "RADEON",
+            sub,
             Color32::from_rgb(255, 235, 230),
+        )
+    } else if is_intel {
+        let sub = if lower_name.contains("arc") {
+            "ARC GRAPHICS"
+        } else if lower_name.contains("xeon") {
+            "XEON"
+        } else if lower_name.contains("ultra") {
+            "CORE ULTRA"
+        } else {
+            "CORE"
+        };
+        (
+            Color32::from_rgb(8, 28, 55),
+            Color32::from_rgb(0, 115, 230),
+            "intel",
+            sub,
+            Color32::from_rgb(225, 242, 255),
         )
     } else {
         (

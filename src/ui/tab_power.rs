@@ -237,7 +237,7 @@ fn render_results_modal(ctx: &egui::Context, theme: AppTheme, stress: &PowerStre
 
     let current_state = stress.state.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone();
     let is_running = matches!(current_state, PowerTestState::Running { .. });
-    let history = stress.history.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone();
+    let history: Vec<_> = stress.history.lock().unwrap_or_else(std::sync::PoisonError::into_inner).iter().cloned().collect();
     let report_opt = stress.last_report.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone();
 
     let (status_title, status_sub, status_is_green, elapsed_secs, max_temp, avg_temp, peak_pwr, droop_pct, min_12, max_12) = if is_running {
@@ -329,7 +329,7 @@ fn render_results_modal(ctx: &egui::Context, theme: AppTheme, stress: &PowerStre
                         } else {
                             Color32::from_rgb(45, 20, 15)
                         })
-                        .stroke(Stroke::new(1.5_f32, if status_is_green { theme.accent_secondary() } else { Color32::from_rgb(239, 68, 68) }))
+                        .stroke(Stroke::new(1.5_f32, if status_is_green { theme.color_success() } else { theme.color_error() }))
                         .corner_radius(CornerRadius::same(8))
                         .inner_margin(Margin::same(12))
                         .show(ui, |ui| {
@@ -337,15 +337,15 @@ fn render_results_modal(ctx: &egui::Context, theme: AppTheme, stress: &PowerStre
                                 ui.label(
                                     RichText::new(&status_title)
                                         .size(15.5)
-                                        .color(if status_is_green { theme.accent_secondary() } else { Color32::from_rgb(255, 120, 120) })
+                                        .color(if status_is_green { theme.color_success() } else { Color32::from_rgb(255, 120, 120) })
                                         .strong(),
                                 );
                             });
                             ui.add_space(4.0);
                             ui.label(
                                 RichText::new(&status_sub)
-                                    .size(13.0)
-                                    .color(theme.text_primary()),
+                                        .size(13.0)
+                                        .color(theme.text_primary()),
                             );
                         });
 
@@ -382,7 +382,7 @@ fn render_results_modal(ctx: &egui::Context, theme: AppTheme, stress: &PowerStre
                     unit: "°C",
                     min_val: 30.0,
                     max_val: 100.0,
-                    line_color: Color32::from_rgb(239, 68, 68),
+                    line_color: theme.color_error(),
                     decimals: 1,
                 };
                 render_telemetry_graph(ui, theme, &spec_temp, &history, |p| p.cpu_temp);
@@ -393,7 +393,7 @@ fn render_results_modal(ctx: &egui::Context, theme: AppTheme, stress: &PowerStre
                     unit: "V",
                     min_val: 11.40,
                     max_val: 12.60,
-                    line_color: Color32::from_rgb(0, 190, 255),
+                    line_color: theme.accent_primary(),
                     decimals: 3,
                 };
                 render_telemetry_graph(ui, theme, &spec_12v, &history, |p| p.voltage_12v);
@@ -404,7 +404,7 @@ fn render_results_modal(ctx: &egui::Context, theme: AppTheme, stress: &PowerStre
                     unit: "W",
                     min_val: 50.0,
                     max_val: 500.0,
-                    line_color: Color32::from_rgb(16, 220, 140),
+                    line_color: theme.color_success(),
                     decimals: 0,
                 };
                 render_telemetry_graph(ui, theme, &spec_pwr, &history, |p| p.total_power_w);
@@ -422,7 +422,7 @@ fn render_results_modal(ctx: &egui::Context, theme: AppTheme, stress: &PowerStre
                                 .size(14.0)
                                 .color(Color32::from_rgb(255, 255, 255)),
                         )
-                        .fill(Color32::from_rgb(220, 38, 38))
+                        .fill(theme.color_error())
                         .corner_radius(CornerRadius::same(6))
                         .min_size(egui::vec2(180.0, 34.0));
 

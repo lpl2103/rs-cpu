@@ -59,7 +59,7 @@ pub fn render(
         theme.card_frame().show(ui, |ui| {
             section_header(ui, theme, "🚀", "Benchmark de Velocidade de Disco (Estilo CrystalDiskMark)");
 
-            let status = state.bench.status.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone();
+            let status = *state.bench.status.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
             let results = state.bench.results.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone();
             let is_running = matches!(status, DiskBenchmarkStatus::Running { .. });
 
@@ -80,8 +80,8 @@ pub fn render(
 
             ui.add_space(10.0);
 
-            if let DiskBenchmarkStatus::Running { stage, progress } = &status {
-                ui.label(RichText::new(stage).size(13.5).color(theme.accent_primary()).strong());
+            if let DiskBenchmarkStatus::Running { stage, progress } = status {
+                ui.label(RichText::new(stage.label()).size(13.5).color(theme.accent_primary()).strong());
                 ui.add_space(4.0);
                 load_gauge(ui, theme, "Progresso do Teste de I/O", progress * 100.0, &format!("{:.0}%", progress * 100.0));
                 ui.add_space(8.0);
@@ -90,7 +90,7 @@ pub fn render(
             ui.horizontal(|ui| {
                 if is_running {
                     let cancel_btn = Button::new(RichText::new("⏹ Cancelar Benchmark").strong().size(13.5).color(Color32::WHITE))
-                        .fill(Color32::from_rgb(220, 38, 38))
+                        .fill(theme.color_error())
                         .corner_radius(CornerRadius::same(6))
                         .min_size(egui::vec2(160.0, 32.0));
 
@@ -99,7 +99,7 @@ pub fn render(
                     }
                 } else {
                     let start_btn = Button::new(RichText::new("🚀 Iniciar Benchmark do Disco").strong().size(13.5).color(Color32::WHITE))
-                        .fill(Color32::from_rgb(16, 160, 90))
+                        .fill(theme.color_success())
                         .corner_radius(CornerRadius::same(6))
                         .min_size(egui::vec2(220.0, 32.0));
 
@@ -125,7 +125,7 @@ pub fn render(
                     let (bg, border, text_col) = if is_crit {
                         (
                             Color32::from_rgb(45, 20, 15),
-                            Color32::from_rgb(239, 68, 68),
+                            theme.color_error(),
                             Color32::from_rgb(255, 220, 220),
                         )
                     } else {
@@ -134,8 +134,8 @@ pub fn render(
                                 AppTheme::Dark => Color32::from_rgb(18, 38, 26),
                                 AppTheme::Light => Color32::from_rgb(230, 250, 238),
                             },
-                            theme.accent_secondary(),
-                            theme.accent_secondary(),
+                            theme.color_success(),
+                            theme.color_success(),
                         )
                     };
 
@@ -237,9 +237,9 @@ pub fn render(
                             ui.label(RichText::new(&attr.threshold_str).color(theme.text_secondary()));
 
                             let status_color = if attr.status == "Normal" {
-                                theme.accent_secondary()
+                                theme.color_success()
                             } else {
-                                Color32::from_rgb(239, 68, 68)
+                                theme.color_error()
                             };
                             ui.label(RichText::new(&attr.status).strong().color(status_color));
                             ui.end_row();

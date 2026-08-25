@@ -89,23 +89,23 @@ pub struct PhysicalDriveInfo {
 impl Default for PhysicalDriveInfo {
     fn default() -> Self {
         let mut drive = Self {
-            model: "NVMe Solid State Drive".to_string(),
-            serial: "S69ENF0W123456".to_string(),
-            firmware: "1.00.00".to_string(),
-            interface: "NVMe PCIe 4.0 x4".to_string(),
-            form_factor: "M.2 2280".to_string(),
-            capacity_gb: 1024.0,
-            technology: "3D TLC NAND Flash".to_string(),
-            health_status: "100% Saudável (Excelente)".to_string(),
-            temperature_c: 38.0,
+            model: "Disco Não Identificado".to_string(),
+            serial: "N/D".to_string(),
+            firmware: "N/D".to_string(),
+            interface: "Desconhecido".to_string(),
+            form_factor: "N/D".to_string(),
+            capacity_gb: 0.0,
+            technology: "N/D".to_string(),
+            health_status: "Dados S.M.A.R.T. indisponíveis".to_string(),
+            temperature_c: 0.0,
             reallocated_sectors: 0,
-            wear_level_pct: 99.0,
-            unsafe_shutdowns: 12,
+            wear_level_pct: 0.0,
+            unsafe_shutdowns: 0,
             crc_errors: 0,
-            total_host_writes_tb: 14.8,
-            total_host_reads_tb: 22.4,
-            power_on_hours: 1420,
-            power_cycles: 380,
+            total_host_writes_tb: 0.0,
+            total_host_reads_tb: 0.0,
+            power_on_hours: 0,
+            power_cycles: 0,
             smart_attributes: Vec::new(),
             diagnostic_warnings: Vec::new(),
             partitions: Vec::new(),
@@ -257,15 +257,41 @@ pub struct DiskBenchmarkResult {
     pub rnd_write_iops: u64,
 }
 
+/// Stages of the storage benchmark.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum DiskBenchmarkStage {
+    /// Sequential write (1 MB blocks).
+    SeqWrite,
+    /// Sequential read (1 MB blocks).
+    SeqRead,
+    /// Random 4K write IOPS.
+    RndWrite4k,
+    /// Random 4K read IOPS.
+    RndRead4k,
+}
+
+impl DiskBenchmarkStage {
+    /// Returns the user-facing Portuguese description of the stage.
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::SeqWrite => "1/4 Gravando Sequencial (1 MB)...",
+            Self::SeqRead => "2/4 Lendo Sequencial (1 MB)...",
+            Self::RndWrite4k => "3/4 Gravando Aleatório 4K (IOPS)...",
+            Self::RndRead4k => "4/4 Lendo Aleatório 4K (IOPS)...",
+        }
+    }
+}
+
 /// Execution status of the disk benchmark.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum DiskBenchmarkStatus {
     /// Engine idle.
     Idle,
     /// Running specific benchmark stage.
     Running {
-        /// Description of active stage (e.g., "Gravando Sequencial (1 MB)...").
-        stage: String,
+        /// Active benchmark stage.
+        stage: DiskBenchmarkStage,
         /// Progress from 0.0 to 1.0.
         progress: f32,
     },
@@ -322,7 +348,7 @@ impl DiskBenchmarkManager {
             // 1. Sequential Write Benchmark
             {
                 *status.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = DiskBenchmarkStatus::Running {
-                    stage: "1/4 Gravando Sequencial (1 MB)...".to_string(),
+                    stage: DiskBenchmarkStage::SeqWrite,
                     progress: 0.1,
                 };
 
@@ -343,11 +369,13 @@ impl DiskBenchmarkManager {
                             return;
                         }
                         if file.write_all(&buffer).is_err() { break; }
-                        let progress = 0.1 + ((i as f32 / BENCH_FILE_SIZE_MB as f32) * 0.2);
-                        *status.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = DiskBenchmarkStatus::Running {
-                            stage: "1/4 Gravando Sequencial (1 MB)...".to_string(),
-                            progress,
-                        };
+                        if i % 4 == 0 || i == BENCH_FILE_SIZE_MB - 1 {
+                            let progress = 0.1 + ((i as f32 / BENCH_FILE_SIZE_MB as f32) * 0.2);
+                            *status.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = DiskBenchmarkStatus::Running {
+                                stage: DiskBenchmarkStage::SeqWrite,
+                                progress,
+                            };
+                        }
                     }
                     let _ = file.flush();
                     let elapsed = start.elapsed().as_secs_f64().max(0.001);
@@ -359,7 +387,7 @@ impl DiskBenchmarkManager {
             // 2. Sequential Read Benchmark
             {
                 *status.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = DiskBenchmarkStatus::Running {
-                    stage: "2/4 Lendo Sequencial (1 MB)...".to_string(),
+                    stage: DiskBenchmarkStage::SeqRead,
                     progress: 0.35,
                 };
 
@@ -374,11 +402,13 @@ impl DiskBenchmarkManager {
                             return;
                         }
                         if file.read_exact(&mut buffer).is_err() { break; }
-                        let progress = 0.35 + ((i as f32 / BENCH_FILE_SIZE_MB as f32) * 0.2);
-                        *status.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = DiskBenchmarkStatus::Running {
-                            stage: "2/4 Lendo Sequencial (1 MB)...".to_string(),
-                            progress,
-                        };
+                        if i % 4 == 0 || i == BENCH_FILE_SIZE_MB - 1 {
+                            let progress = 0.35 + ((i as f32 / BENCH_FILE_SIZE_MB as f32) * 0.2);
+                            *status.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = DiskBenchmarkStatus::Running {
+                                stage: DiskBenchmarkStage::SeqRead,
+                                progress,
+                            };
+                        }
                     }
                     let elapsed = start.elapsed().as_secs_f64().max(0.001);
                     final_res.seq_read_mbs = (BENCH_FILE_SIZE_MB as f64) / elapsed;
@@ -389,7 +419,7 @@ impl DiskBenchmarkManager {
             // 3. Random 4K Write Benchmark
             {
                 *status.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = DiskBenchmarkStatus::Running {
-                    stage: "3/4 Gravando Aleatório 4K (IOPS)...".to_string(),
+                    stage: DiskBenchmarkStage::RndWrite4k,
                     progress: 0.60,
                 };
 
@@ -407,10 +437,10 @@ impl DiskBenchmarkManager {
                         let _ = file.seek(SeekFrom::Start(offset));
                         if file.write_all(&buffer).is_err() { break; }
 
-                        if i % 200 == 0 {
+                        if i % 200 == 0 || i == BENCH_CHUNKS_4K_COUNT - 1 {
                             let progress = 0.60 + ((i as f32 / BENCH_CHUNKS_4K_COUNT as f32) * 0.2);
                             *status.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = DiskBenchmarkStatus::Running {
-                                stage: "3/4 Gravando Aleatório 4K (IOPS)...".to_string(),
+                                stage: DiskBenchmarkStage::RndWrite4k,
                                 progress,
                             };
                         }
@@ -429,7 +459,7 @@ impl DiskBenchmarkManager {
             // 4. Random 4K Read Benchmark
             {
                 *status.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = DiskBenchmarkStatus::Running {
-                    stage: "4/4 Lendo Aleatório 4K (IOPS)...".to_string(),
+                    stage: DiskBenchmarkStage::RndRead4k,
                     progress: 0.82,
                 };
 
@@ -447,10 +477,10 @@ impl DiskBenchmarkManager {
                         let _ = file.seek(SeekFrom::Start(offset));
                         if file.read_exact(&mut buffer).is_err() { break; }
 
-                        if i % 200 == 0 {
+                        if i % 200 == 0 || i == BENCH_CHUNKS_4K_COUNT - 1 {
                             let progress = 0.82 + ((i as f32 / BENCH_CHUNKS_4K_COUNT as f32) * 0.18);
                             *status.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = DiskBenchmarkStatus::Running {
-                                stage: "4/4 Lendo Aleatório 4K (IOPS)...".to_string(),
+                                stage: DiskBenchmarkStage::RndRead4k,
                                 progress,
                             };
                         }
@@ -543,15 +573,8 @@ impl StorageInfo {
 
 #[cfg(target_os = "windows")]
 fn detect_windows_physical_drives(partitions: &[PartitionInfo]) -> Option<Vec<PhysicalDriveInfo>> {
-    // 1. Try Ultra-Fast Native Win32 DeviceIoControl (< 0.5 ms)
-    if let Some(native_drives) = detect_native_ioctl_physical_drives(partitions) {
-        if !native_drives.is_empty() {
-            return Some(native_drives);
-        }
-    }
-
-    // 2. Fallback to PowerShell if native IOCTL fails
-    detect_powershell_physical_drives(partitions)
+    // Native Win32 DeviceIoControl (< 0.5 ms) — no PowerShell fallback
+    detect_native_ioctl_physical_drives(partitions)
 }
 
 #[cfg(target_os = "windows")]
@@ -566,6 +589,7 @@ fn detect_native_ioctl_physical_drives(partitions: &[PartitionInfo]) -> Option<V
     const OPEN_EXISTING: u32 = 3;
     const IOCTL_STORAGE_QUERY_PROPERTY: u32 = 0x002D_1400;
     const IOCTL_DISK_GET_DRIVE_GEOMETRY_EX: u32 = 0x0007_00A0;
+    const IOCTL_DISK_GET_LENGTH_INFO: u32 = 0x0007_405C;
 
     #[link(name = "kernel32")]
     extern "system" {
@@ -593,6 +617,16 @@ fn detect_native_ioctl_physical_drives(partitions: &[PartitionInfo]) -> Option<V
         fn CloseHandle(h_object: Handle) -> i32;
     }
 
+    /// RAII guard that automatically closes Win32 handles on drop, preventing leaks on panic.
+    struct HandleGuard(Handle);
+    impl Drop for HandleGuard {
+        fn drop(&mut self) {
+            if !self.0.is_null() && self.0 != INVALID_HANDLE_VALUE {
+                unsafe { CloseHandle(self.0); }
+            }
+        }
+    }
+
     #[repr(C)]
     struct StoragePropertyQuery {
         property_id: u32,
@@ -606,10 +640,11 @@ fn detect_native_ioctl_physical_drives(partitions: &[PartitionInfo]) -> Option<V
         let drive_path = format!(r"\\.\PhysicalDrive{drive_idx}");
         let wide_path: Vec<u16> = drive_path.encode_utf16().chain(std::iter::once(0)).collect();
 
-        let handle = unsafe {
+        // Try query-only access first (no admin required)
+        let mut raw_handle = unsafe {
             CreateFileW(
                 wide_path.as_ptr(),
-                0, // Query access (does not require admin privileges)
+                0,
                 FILE_SHARE_READ | FILE_SHARE_WRITE,
                 std::ptr::null(),
                 OPEN_EXISTING,
@@ -618,9 +653,9 @@ fn detect_native_ioctl_physical_drives(partitions: &[PartitionInfo]) -> Option<V
             )
         };
 
-        if handle == INVALID_HANDLE_VALUE {
-            // Try with GENERIC_READ
-            let handle_read = unsafe {
+        // FIX: If query-only fails, try GENERIC_READ and UPDATE the handle
+        if raw_handle == INVALID_HANDLE_VALUE {
+            raw_handle = unsafe {
                 CreateFileW(
                     wide_path.as_ptr(),
                     GENERIC_READ,
@@ -631,10 +666,14 @@ fn detect_native_ioctl_physical_drives(partitions: &[PartitionInfo]) -> Option<V
                     std::ptr::null_mut(),
                 )
             };
-            if handle_read == INVALID_HANDLE_VALUE {
+            if raw_handle == INVALID_HANDLE_VALUE {
                 continue;
             }
         }
+
+        // RAII guard: handle is automatically closed when _guard goes out of scope,
+        // even if the code below panics.
+        let _guard = HandleGuard(raw_handle);
 
         let query = StoragePropertyQuery {
             property_id: 0, // StorageDeviceProperty
@@ -647,7 +686,7 @@ fn detect_native_ioctl_physical_drives(partitions: &[PartitionInfo]) -> Option<V
 
         let ok = unsafe {
             DeviceIoControl(
-                handle,
+                raw_handle,
                 IOCTL_STORAGE_QUERY_PROPERTY,
                 (&raw const query).cast::<c_void>(),
                 std::mem::size_of::<StoragePropertyQuery>() as u32,
@@ -658,54 +697,90 @@ fn detect_native_ioctl_physical_drives(partitions: &[PartitionInfo]) -> Option<V
             )
         };
 
-        if ok != 0 && bytes_returned >= 28 {
-            let read_c_str = |offset: u32| -> String {
-                if offset == 0 || (offset as usize) >= out_buffer.len() {
-                    return String::new();
-                }
-                let start = offset as usize;
-                let end = out_buffer[start..]
-                    .iter()
-                    .position(|&b| b == 0)
-                    .map_or(out_buffer.len(), |p| start + p);
-                String::from_utf8_lossy(&out_buffer[start..end]).trim().to_string()
-            };
+        if ok == 0 || bytes_returned < 28 {
+            continue;
+        }
 
-            let vendor_offset = u32::from_le_bytes(out_buffer[8..12].try_into().unwrap_or_default());
-            let product_offset = u32::from_le_bytes(out_buffer[12..16].try_into().unwrap_or_default());
-            let revision_offset = u32::from_le_bytes(out_buffer[16..20].try_into().unwrap_or_default());
-            let serial_offset = u32::from_le_bytes(out_buffer[20..24].try_into().unwrap_or_default());
-            let bus_type_code = out_buffer[28];
+        let read_c_str = |offset: u32| -> String {
+            if offset == 0 || (offset as usize) >= out_buffer.len() {
+                return String::new();
+            }
+            let start = offset as usize;
+            let end = out_buffer[start..]
+                .iter()
+                .position(|&b| b == 0)
+                .map_or(out_buffer.len(), |p| start + p);
+            String::from_utf8_lossy(&out_buffer[start..end]).trim().to_string()
+        };
 
-            let vendor = read_c_str(vendor_offset);
-            let product = read_c_str(product_offset);
-            let firmware = read_c_str(revision_offset);
-            let serial = read_c_str(serial_offset);
+        let vendor_offset = u32::from_le_bytes(out_buffer[12..16].try_into().unwrap_or_default());
+        let product_offset = u32::from_le_bytes(out_buffer[16..20].try_into().unwrap_or_default());
+        let revision_offset = u32::from_le_bytes(out_buffer[20..24].try_into().unwrap_or_default());
+        let serial_offset = u32::from_le_bytes(out_buffer[24..28].try_into().unwrap_or_default());
+        let bus_type_code = u32::from_le_bytes(out_buffer[28..32].try_into().unwrap_or_default());
 
-            let model = if !vendor.is_empty() && !product.contains(&vendor) {
-                format!("{vendor} {product}")
-            } else if !product.is_empty() {
-                product
+        let vendor = read_c_str(vendor_offset);
+        let product = read_c_str(product_offset);
+        let firmware = read_c_str(revision_offset);
+        let serial = read_c_str(serial_offset);
+
+        let vendor_clean = vendor.trim().trim_start_matches("ATA ").trim_matches('_').trim();
+        let product_clean = product.trim().trim_matches('_').trim();
+
+        let model = if !product_clean.is_empty() {
+            if !vendor_clean.is_empty()
+                && !product_clean.to_lowercase().contains(&vendor_clean.to_lowercase())
+                && vendor_clean != "ATA"
+            {
+                format!("{vendor_clean} {product_clean}")
             } else {
-                format!("Physical Drive #{drive_idx}")
-            };
+                product_clean.to_string()
+            }
+        } else if !vendor_clean.is_empty() && vendor_clean != "ATA" {
+            vendor_clean.to_string()
+        } else {
+            format!("Physical Drive #{drive_idx}")
+        };
 
-            let bus_type = match bus_type_code {
-                3 | 11 => "SATA",
-                7 => "USB",
-                8 => "RAID",
-                17 => "NVMe",
-                _ => "NVMe / SSD",
-            };
+        let bus_type = match bus_type_code {
+            3 | 11 => "SATA",
+            7 => "USB",
+            8 => "RAID",
+            17 => "NVMe",
+            _ => "NVMe / SSD",
+        };
 
-            // Query drive capacity via DISK_GEOMETRY_EX
+        // Query drive capacity via DISK_GEOMETRY_EX or IOCTL_DISK_GET_LENGTH_INFO
+        let mut capacity_gb = 0.0_f64;
+
+        // 1. Try IOCTL_DISK_GET_LENGTH_INFO first (direct 64-bit disk byte length)
+        let mut length_bytes: u64 = 0;
+        let mut len_returned = 0u32;
+        let len_ok = unsafe {
+            DeviceIoControl(
+                raw_handle,
+                IOCTL_DISK_GET_LENGTH_INFO,
+                std::ptr::null(),
+                0,
+                (&raw mut length_bytes).cast::<c_void>(),
+                8,
+                &raw mut len_returned,
+                std::ptr::null_mut(),
+            )
+        };
+
+        if len_ok != 0 && length_bytes > 0 {
+            capacity_gb = (length_bytes as f64) / 1_073_741_824.0;
+        }
+
+        // 2. Fallback to DISK_GEOMETRY_EX (DiskSize is at offset 24..32 after DISK_GEOMETRY struct)
+        if capacity_gb == 0.0 {
             let mut geom_buffer = [0u8; 256];
             let mut geom_bytes = 0u32;
-            let mut capacity_gb = 0.0_f64;
 
             let geom_ok = unsafe {
                 DeviceIoControl(
-                    handle,
+                    raw_handle,
                     IOCTL_DISK_GET_DRIVE_GEOMETRY_EX,
                     std::ptr::null(),
                     0,
@@ -716,57 +791,56 @@ fn detect_native_ioctl_physical_drives(partitions: &[PartitionInfo]) -> Option<V
                 )
             };
 
-            if geom_ok != 0 && geom_bytes >= 16 {
-                let disk_size_bytes = u64::from_le_bytes(geom_buffer[8..16].try_into().unwrap_or_default());
+            if geom_ok != 0 && geom_bytes >= 32 {
+                let disk_size_bytes = u64::from_le_bytes(geom_buffer[24..32].try_into().unwrap_or_default());
                 if disk_size_bytes > 0 {
                     capacity_gb = (disk_size_bytes as f64) / 1_073_741_824.0;
                 }
             }
-
-            if capacity_gb == 0.0 {
-                // Sum partition sizes as fallback
-                let total_part: f64 = partitions.iter().map(|p| p.total_gb).sum();
-                capacity_gb = if total_part > 0.0 { total_part } else { 1024.0 };
-            }
-
-            let (interface, form_factor, tech) = deduce_storage_specs(&model, bus_type);
-
-            let drive_partitions = if drive_idx == 0 {
-                partitions.to_vec()
-            } else {
-                Vec::new()
-            };
-
-            let mut drive = PhysicalDriveInfo {
-                model,
-                serial: if serial.is_empty() { format!("SN-00{drive_idx}88A") } else { serial },
-                firmware: if firmware.is_empty() { "1.00".to_string() } else { firmware },
-                interface,
-                form_factor,
-                capacity_gb,
-                technology: tech,
-                health_status: "100% Saudável (Excelente)".to_string(),
-                temperature_c: 36.0 + (drive_idx as f32 * 2.0),
-                reallocated_sectors: 0,
-                wear_level_pct: 99.0,
-                unsafe_shutdowns: 12,
-                crc_errors: 0,
-                total_host_writes_tb: 9.8 + (f64::from(drive_idx) * 3.5),
-                total_host_reads_tb: 12.4 + (f64::from(drive_idx) * 4.0),
-                power_on_hours: 1420 + (drive_idx * 500) as u64,
-                power_cycles: 320 + (drive_idx * 80) as u64,
-                smart_attributes: Vec::new(),
-                diagnostic_warnings: Vec::new(),
-                partitions: drive_partitions,
-            };
-
-            drive.build_smart_attributes_and_warnings();
-            drives.push(drive);
         }
 
-        unsafe {
-            CloseHandle(handle);
+        let drive_partitions: Vec<PartitionInfo> = partitions
+            .iter()
+            .filter(|p| {
+                get_partition_disk_number(&p.mount_point)
+                    .map_or(drive_idx == 0, |disk_num| disk_num == drive_idx)
+            })
+            .cloned()
+            .collect();
+
+        if capacity_gb == 0.0 {
+            let total_part: f64 = drive_partitions.iter().map(|p| p.total_gb).sum();
+            capacity_gb = if total_part > 0.0 { total_part } else { 0.0 };
         }
+
+        let (interface, form_factor, tech) = deduce_storage_specs(&model, bus_type);
+
+        let mut drive = PhysicalDriveInfo {
+            model,
+            serial: if serial.is_empty() { "N/D".to_string() } else { serial },
+            firmware: if firmware.is_empty() { "N/D".to_string() } else { firmware },
+            interface,
+            form_factor,
+            capacity_gb,
+            technology: tech,
+            health_status: "Dados S.M.A.R.T. indisponíveis".to_string(),
+            temperature_c: 0.0,
+            reallocated_sectors: 0,
+            wear_level_pct: 0.0,
+            unsafe_shutdowns: 0,
+            crc_errors: 0,
+            total_host_writes_tb: 0.0,
+            total_host_reads_tb: 0.0,
+            power_on_hours: 0,
+            power_cycles: 0,
+            smart_attributes: Vec::new(),
+            diagnostic_warnings: Vec::new(),
+            partitions: drive_partitions,
+        };
+
+        drive.build_smart_attributes_and_warnings();
+        drives.push(drive);
+        // _guard dropped here → CloseHandle called automatically
     }
 
     if drives.is_empty() {
@@ -776,98 +850,104 @@ fn detect_native_ioctl_physical_drives(partitions: &[PartitionInfo]) -> Option<V
     }
 }
 
+/// Queries Win32 `IOCTL_VOLUME_GET_VOLUME_DISK_EXTENTS` to find the physical disk index for a volume mount point.
 #[cfg(target_os = "windows")]
-fn detect_powershell_physical_drives(partitions: &[PartitionInfo]) -> Option<Vec<PhysicalDriveInfo>> {
-    use std::os::windows::process::CommandExt;
-    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+fn get_partition_disk_number(mount_point: &str) -> Option<u32> {
+    use std::ffi::c_void;
 
-    let mut drives = Vec::new();
+    type Handle = *mut c_void;
+    const INVALID_HANDLE_VALUE: Handle = -1_isize as Handle;
+    const FILE_SHARE_READ: u32 = 0x0000_0001;
+    const FILE_SHARE_WRITE: u32 = 0x0000_0002;
+    const OPEN_EXISTING: u32 = 3;
+    const IOCTL_VOLUME_GET_VOLUME_DISK_EXTENTS: u32 = 0x0056_0000;
 
-    let output = std::process::Command::new("powershell")
-        .creation_flags(CREATE_NO_WINDOW)
-        .args([
-            "-NoProfile",
-            "-NonInteractive",
-            "-WindowStyle",
-            "Hidden",
-            "-Command",
-            "Get-PhysicalDisk | Select-Object -Property FriendlyName, SerialNumber, MediaType, BusType, Size, FirmwareVersion, HealthStatus | ConvertTo-Json",
-        ])
-        .output();
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn CreateFileW(
+            lp_file_name: *const u16,
+            dw_desired_access: u32,
+            dw_share_mode: u32,
+            lp_security_attributes: *const c_void,
+            dw_creation_disposition: u32,
+            dw_flags_and_attributes: u32,
+            h_template_file: Handle,
+        ) -> Handle;
+        fn DeviceIoControl(
+            h_device: Handle,
+            dw_io_control_code: u32,
+            lp_in_buffer: *const c_void,
+            n_in_buffer_size: u32,
+            lp_out_buffer: *mut c_void,
+            n_out_buffer_size: u32,
+            lp_bytes_returned: *mut u32,
+            lp_overlapped: *mut c_void,
+        ) -> i32;
+        fn CloseHandle(h_object: Handle) -> i32;
+    }
 
-    if let Ok(out) = output {
-        if let Ok(json_str) = String::from_utf8(out.stdout) {
-            if let Ok(val) = serde_json::from_str::<serde_json::Value>(&json_str) {
-                let items = if val.is_array() {
-                    val.as_array().cloned().unwrap_or_default()
-                } else if val.is_object() {
-                    vec![val]
-                } else {
-                    Vec::new()
-                };
-
-                for (idx, item) in items.iter().enumerate() {
-                    let model = item["FriendlyName"].as_str().unwrap_or("Solid State Drive").trim().to_string();
-                    let serial = item["SerialNumber"].as_str().unwrap_or("00000000").trim().to_string();
-                    let firmware = item["FirmwareVersion"].as_str().unwrap_or("1.00").trim().to_string();
-                    let bus_type = item["BusType"].as_str().unwrap_or("NVMe").trim().to_string();
-                    let size_bytes = item["Size"]
-                        .as_u64()
-                        .or_else(|| item["Size"].as_f64().map(|v| v as u64))
-                        .unwrap_or(0);
-                    let capacity_gb = (size_bytes as f64) / 1_073_741_824.0;
-                    let health_raw = item["HealthStatus"].as_str().unwrap_or("Healthy");
-
-                    let health_status = if health_raw.eq_ignore_ascii_case("Healthy") {
-                        "100% Saudável (Excelente)".to_string()
-                    } else {
-                        format!("Status: {health_raw}")
-                    };
-
-                    let (interface, form_factor, tech) = deduce_storage_specs(&model, &bus_type);
-
-                    // Assign partitions to the physical drives
-                    let drive_partitions = if items.len() == 1 || idx == 0 {
-                        partitions.to_vec()
-                    } else {
-                        Vec::new()
-                    };
-
-                    let mut drive = PhysicalDriveInfo {
-                        model,
-                        serial,
-                        firmware,
-                        interface,
-                        form_factor,
-                        capacity_gb: if capacity_gb > 0.0 { capacity_gb } else { 1024.0 },
-                        technology: tech,
-                        health_status,
-                        temperature_c: 36.0 + (idx as f32 * 2.0),
-                        reallocated_sectors: 0,
-                        wear_level_pct: 99.0 - (idx as f32 * 2.0),
-                        unsafe_shutdowns: 8 + (idx as u32 * 3),
-                        crc_errors: 0,
-                        total_host_writes_tb: 8.5 + (idx as f64 * 6.2),
-                        total_host_reads_tb: 14.2 + (idx as f64 * 8.1),
-                        power_on_hours: 1200 + (idx as u64 * 400),
-                        power_cycles: 320 + (idx as u64 * 80),
-                        smart_attributes: Vec::new(),
-                        diagnostic_warnings: Vec::new(),
-                        partitions: drive_partitions,
-                    };
-                    drive.build_smart_attributes_and_warnings();
-                    drives.push(drive);
-                }
+    struct Guard(Handle);
+    impl Drop for Guard {
+        fn drop(&mut self) {
+            if !self.0.is_null() && self.0 != INVALID_HANDLE_VALUE {
+                unsafe { CloseHandle(self.0); }
             }
         }
     }
 
-    if drives.is_empty() {
-        None
-    } else {
-        Some(drives)
+    let clean = mount_point.trim_end_matches(['\\', '/']);
+    if clean.is_empty() {
+        return None;
     }
+    let vol_path = format!(r"\\.\{clean}");
+    let wide: Vec<u16> = vol_path.encode_utf16().chain(std::iter::once(0)).collect();
+
+    let h = unsafe {
+        CreateFileW(
+            wide.as_ptr(),
+            0,
+            FILE_SHARE_READ | FILE_SHARE_WRITE,
+            std::ptr::null(),
+            OPEN_EXISTING,
+            0,
+            std::ptr::null_mut(),
+        )
+    };
+
+    if h.is_null() || h == INVALID_HANDLE_VALUE {
+        return None;
+    }
+
+    let _g = Guard(h);
+
+    let mut extents_buf = [0u8; 256];
+    let mut bytes_ret = 0u32;
+    let ok = unsafe {
+        DeviceIoControl(
+            h,
+            IOCTL_VOLUME_GET_VOLUME_DISK_EXTENTS,
+            std::ptr::null(),
+            0,
+            extents_buf.as_mut_ptr().cast::<c_void>(),
+            extents_buf.len() as u32,
+            &raw mut bytes_ret,
+            std::ptr::null_mut(),
+        )
+    };
+
+    if ok != 0 && bytes_ret >= 12 {
+        let num_extents = u32::from_le_bytes(extents_buf[0..4].try_into().unwrap_or_default());
+        if num_extents >= 1 {
+            // DISK_EXTENT struct: DiskNumber (u32) is at offset 8..12 due to 8-byte alignment of next LARGE_INTEGER
+            let disk_num = u32::from_le_bytes(extents_buf[8..12].try_into().unwrap_or_default());
+            return Some(disk_num);
+        }
+    }
+    None
 }
+
+
+
 
 fn deduce_storage_specs(model: &str, bus: &str) -> (String, String, String) {
     let lower = format!("{model} {bus}").to_lowercase();
