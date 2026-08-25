@@ -9,9 +9,11 @@ use eframe::egui::{self, Button, Color32, CornerRadius, Margin, RichText, Scroll
 /// Configuration options for rendering a telemetry curve.
 struct GraphPlotSpec<'a> {
     title: &'a str,
+    unit: &'a str,
     min_val: f32,
     max_val: f32,
     line_color: Color32,
+    decimals: usize,
 }
 
 /// Renders the Power & PSU Stress Test tab in Portuguese (PT-BR).
@@ -371,33 +373,39 @@ fn render_results_modal(ctx: &egui::Context, theme: AppTheme, stress: &PowerStre
                 ui.separator();
                 ui.add_space(10.0);
 
-                // Gráficos e Curvas de Desempenho
+                // Gráficos e Curvas de Desempenho com Linhas de Grade e Eixo Y
                 ui.label(RichText::new("📈 Curvas de Telemetria Durante o Teste:").size(14.5).color(theme.accent_primary()).strong());
                 ui.add_space(6.0);
 
                 let spec_temp = GraphPlotSpec {
-                    title: "Curva de Temperatura da CPU (°C)",
+                    title: "Curva de Temperatura da CPU",
+                    unit: "°C",
                     min_val: 30.0,
                     max_val: 100.0,
                     line_color: Color32::from_rgb(239, 68, 68),
+                    decimals: 1,
                 };
                 render_telemetry_graph(ui, theme, &spec_temp, &history, |p| p.cpu_temp);
-                ui.add_space(8.0);
+                ui.add_space(10.0);
 
                 let spec_12v = GraphPlotSpec {
-                    title: "Estabilidade da Tensão +12V (Volts)",
-                    min_val: 11.5,
-                    max_val: 12.5,
+                    title: "Estabilidade da Tensão +12V",
+                    unit: "V",
+                    min_val: 11.40,
+                    max_val: 12.60,
                     line_color: Color32::from_rgb(0, 190, 255),
+                    decimals: 3,
                 };
                 render_telemetry_graph(ui, theme, &spec_12v, &history, |p| p.voltage_12v);
-                ui.add_space(8.0);
+                ui.add_space(10.0);
 
                 let spec_pwr = GraphPlotSpec {
-                    title: "Curva de Potência Total do Sistema (Watts)",
+                    title: "Curva de Potência Total do Sistema",
+                    unit: "W",
                     min_val: 50.0,
                     max_val: 500.0,
                     line_color: Color32::from_rgb(16, 220, 140),
+                    decimals: 0,
                 };
                 render_telemetry_graph(ui, theme, &spec_pwr, &history, |p| p.total_power_w);
 
@@ -445,7 +453,7 @@ fn render_results_modal(ctx: &egui::Context, theme: AppTheme, stress: &PowerStre
     }
 }
 
-/// Renders a responsive historical line graph for telemetry samples.
+/// Renders a responsive historical line graph with grid lines, reference values, and current badges.
 fn render_telemetry_graph(
     ui: &mut Ui,
     theme: AppTheme,
@@ -453,8 +461,30 @@ fn render_telemetry_graph(
     history: &[crate::hardware::power::StressDataPoint],
     extractor: impl Fn(&crate::hardware::power::StressDataPoint) -> f32,
 ) {
-    ui.label(RichText::new(spec.title).size(13.0).color(theme.text_secondary()));
-    let height = 58.0_f32;
+    let latest_val = history.last().map_or(spec.min_val, &extractor);
+    let peak_val = history.iter().map(&extractor).fold(spec.min_val, f32::max);
+
+    // Linha de Título com Badge de Leitura Atual em Destaque
+    ui.horizontal(|ui| {
+        ui.label(RichText::new(spec.title).size(13.0).color(theme.text_secondary()).strong());
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            let reading_str = match spec.decimals {
+                0 => format!("{latest_val:.0} {} (Pico: {peak_val:.0} {})", spec.unit, spec.unit),
+                1 => format!("{latest_val:.1} {} (Pico: {peak_val:.1} {})", spec.unit, spec.unit),
+                _ => format!("{latest_val:.3} {} (Pico: {peak_val:.3} {})", spec.unit, spec.unit),
+            };
+            ui.label(
+                RichText::new(reading_str)
+                    .size(13.0)
+                    .color(spec.line_color)
+                    .strong(),
+            );
+        });
+    });
+
+    ui.add_space(2.0);
+
+    let height = 76.0_f32;
     let desired_width = ui.available_width();
     let (rect, _) = ui.allocate_exact_size(egui::vec2(desired_width, height), egui::Sense::hover());
 
@@ -463,49 +493,102 @@ fn render_telemetry_graph(
         rect,
         CornerRadius::same(6),
         match theme {
-            AppTheme::Dark => Color32::from_rgb(22, 26, 36),
+            AppTheme::Dark => Color32::from_rgb(20, 24, 34),
             AppTheme::Light => Color32::from_rgb(236, 240, 248),
         },
     );
 
+    let label_gutter = 56.0_f32;
+    let plot_rect = egui::Rect::from_min_max(
+        egui::pos2(rect.min.x + label_gutter, rect.min.y + 6.0),
+        egui::pos2(rect.max.x - 10.0, rect.max.y - 6.0),
+    );
+
+    let grid_stroke_col = match theme {
+        AppTheme::Dark => Color32::from_rgb(36, 44, 60),
+        AppTheme::Light => Color32::from_rgb(212, 218, 230),
+    };
+    let text_col = theme.text_secondary();
+
+    // 3 Linhas de Grade Horizontais com Valores de Referência (100%, 50%, 0%)
+    let grid_levels = [
+        (1.0_f32, spec.max_val),
+        (0.5_f32, f32::midpoint(spec.max_val, spec.min_val)),
+        (0.0_f32, spec.min_val),
+    ];
+
+    for (frac, val) in grid_levels {
+        let y = plot_rect.max.y - (frac * plot_rect.height());
+
+        // Linha de grade
+        ui.painter().line_segment(
+            [egui::pos2(plot_rect.min.x, y), egui::pos2(plot_rect.max.x, y)],
+            Stroke::new(1.0_f32, grid_stroke_col),
+        );
+
+        // Texto do valor de referência no eixo esquerdo
+        let val_label = match spec.decimals {
+            0 => format!("{val:.0}{}", spec.unit),
+            1 => format!("{val:.1}{}", spec.unit),
+            _ => format!("{val:.2}{}", spec.unit),
+        };
+
+        ui.painter().text(
+            egui::pos2(rect.min.x + 8.0, y),
+            egui::Align2::LEFT_CENTER,
+            val_label,
+            egui::FontId::monospace(10.5),
+            text_col,
+        );
+    }
+
     if history.is_empty() {
         ui.painter().text(
-            rect.center(),
+            plot_rect.center(),
             egui::Align2::CENTER_CENTER,
-            "Aguardando primeiras amostras...",
+            "Aguardando primeiras amostras de telemetria...",
             egui::FontId::proportional(12.0),
             theme.text_secondary(),
         );
         return;
     }
 
+    let val_range = (spec.max_val - spec.min_val).max(0.001);
+
     if history.len() == 1 {
         let val = extractor(&history[0]);
-        let frac_y = ((val - spec.min_val) / (spec.max_val - spec.min_val)).clamp(0.0, 1.0);
-        let py = rect.max.y - (frac_y * (rect.height() - 8.0)) - 4.0;
+        let frac_y = ((val - spec.min_val) / val_range).clamp(0.0, 1.0);
+        let py = plot_rect.max.y - (frac_y * plot_rect.height());
         ui.painter().line_segment(
-            [egui::pos2(rect.min.x, py), egui::pos2(rect.max.x, py)],
-            Stroke::new(2.0_f32, spec.line_color),
+            [egui::pos2(plot_rect.min.x, py), egui::pos2(plot_rect.max.x, py)],
+            Stroke::new(2.2_f32, spec.line_color),
         );
         return;
     }
 
     let pts_count = history.len();
-    let step_x = rect.width() / (pts_count - 1) as f32;
+    let step_x = plot_rect.width() / (pts_count - 1) as f32;
 
     let points: Vec<egui::Pos2> = history
         .iter()
         .enumerate()
         .map(|(idx, data_pt)| {
             let val = extractor(data_pt);
-            let frac_y = ((val - spec.min_val) / (spec.max_val - spec.min_val)).clamp(0.0, 1.0);
-            let px = rect.min.x + (idx as f32 * step_x);
-            let py = rect.max.y - (frac_y * (rect.height() - 8.0)) - 4.0;
+            let frac_y = ((val - spec.min_val) / val_range).clamp(0.0, 1.0);
+            let px = plot_rect.min.x + (idx as f32 * step_x);
+            let py = plot_rect.max.y - (frac_y * plot_rect.height());
             egui::pos2(px, py)
         })
         .collect();
 
+    // Desenha segmentos de linha da curva de telemetria
     for i in 0..points.len() - 1 {
-        ui.painter().line_segment([points[i], points[i + 1]], Stroke::new(2.0_f32, spec.line_color));
+        ui.painter().line_segment([points[i], points[i + 1]], Stroke::new(2.2_f32, spec.line_color));
+    }
+
+    // Ponto / Marcador na ponta mais recente
+    if let Some(&last_pt) = points.last() {
+        ui.painter().circle_filled(last_pt, 4.0_f32, spec.line_color);
+        ui.painter().circle_stroke(last_pt, 6.0_f32, Stroke::new(1.2_f32, Color32::from_rgb(255, 255, 255)));
     }
 }
