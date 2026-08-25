@@ -9,10 +9,16 @@ pub mod storage;
 
 pub use cpu::{CacheInfo, CpuInfo, CpuLiveMetrics};
 pub use gpu::GpuInfo;
-pub use memory::{MemoryInfo, MemoryLiveMetrics, SpdSlotInfo, TimingProfile};
+pub use memory::{
+    MemoryInfo, MemoryLiveMetrics, RamStressManager, RamStressResult, RamStressStatus, SpdSlotInfo,
+    TimingProfile,
+};
 pub use motherboard::MotherboardInfo;
 pub use power::{PowerRailTelemetry, PowerStressManager, PowerTestReport, PowerTestState};
-pub use storage::{PartitionInfo, PhysicalDriveInfo, SmartAttribute, StorageInfo};
+pub use storage::{
+    DiskBenchmarkManager, DiskBenchmarkResult, DiskBenchmarkStatus, PartitionInfo,
+    PhysicalDriveInfo, SmartAttribute, StorageInfo,
+};
 
 use serde::{Deserialize, Serialize};
 use sysinfo::{Components, CpuRefreshKind, MemoryRefreshKind, RefreshKind, System};
