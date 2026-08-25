@@ -14,7 +14,11 @@ fn main() {
         generate_ico_file(&icon_path);
 
         let mut res = winres::WindowsResource::new();
-        res.set_icon(icon_path.to_str().unwrap());
+        if let Some(p_str) = icon_path.to_str() {
+            res.set_icon(p_str);
+        } else {
+            res.set_icon("assets/icon.ico");
+        }
 
         // UAC Administrator Elevation Manifest for Release builds
         let profile = std::env::var("PROFILE").unwrap_or_default();

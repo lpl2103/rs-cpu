@@ -175,7 +175,7 @@ pub fn render(
                 let target_mins = (target_secs % 3600) / 60;
                 let target_rem_secs = target_secs % 60;
 
-                let progress_frac = (elapsed_secs as f32 / target_secs as f32).clamp(0.0, 1.0);
+                let progress_frac = (elapsed_secs as f32 / target_secs.max(1) as f32).clamp(0.0, 1.0);
 
                 ui.horizontal(|ui| {
                     ui.label(
@@ -230,15 +230,15 @@ pub fn render(
 
 /// Renders the detailed Results Modal popup when a power stress test is running or finishes.
 fn render_results_modal(ctx: &egui::Context, theme: AppTheme, stress: &PowerStressManager) {
-    let mut show = stress.show_modal.lock().is_ok_and(|m| *m);
+    let mut show = *stress.show_modal.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     if !show {
         return;
     }
 
-    let current_state = stress.state.lock().map_or(PowerTestState::Idle, |s| s.clone());
+    let current_state = stress.state.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone();
     let is_running = matches!(current_state, PowerTestState::Running { .. });
-    let history = stress.history.lock().map_or_else(|_| Vec::new(), |h| h.clone());
-    let report_opt = stress.last_report.lock().map_or(None, |r| r.clone());
+    let history = stress.history.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone();
+    let report_opt = stress.last_report.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone();
 
     let (status_title, status_sub, status_is_green, elapsed_secs, max_temp, avg_temp, peak_pwr, droop_pct, min_12, max_12) = if is_running {
         let (e_secs, _t_secs) = if let PowerTestState::Running { elapsed_secs, target_secs } = current_state {

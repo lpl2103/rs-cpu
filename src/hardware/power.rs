@@ -158,6 +158,8 @@ pub struct PowerStressManager {
     pub selected_duration_secs: u64,
 }
 
+const MAX_HISTORY_POINTS: usize = 600; // Ring buffer cap (10 minutes)
+
 impl Default for PowerStressManager {
     fn default() -> Self {
         Self {
@@ -185,7 +187,8 @@ impl PowerStressManager {
         cancel.store(false, Ordering::SeqCst);
 
         // Seed initial data points so graphs have immediate live visualization
-        if let Ok(mut h) = history.lock() {
+        {
+            let mut h = history.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
             h.clear();
             h.push(StressDataPoint {
                 elapsed_secs: 0,
@@ -199,14 +202,16 @@ impl PowerStressManager {
         }
 
         // Open modal IMMEDIATELY when test is initiated!
-        if let Ok(mut m) = show_modal.lock() {
+        {
+            let mut m = show_modal.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
             *m = true;
         }
 
-        if let Ok(mut s) = state.lock() {
+        {
+            let mut s = state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
             *s = PowerTestState::Running {
                 elapsed_secs: 0,
-                target_secs: duration_secs,
+                target_secs: duration_secs.max(1),
             };
         }
 
@@ -252,7 +257,8 @@ impl PowerStressManager {
                         let total_w = simulated_cpu_w + sim_gpu_watts + 45.0;
                         let simulated_temp = 54.0 + (load_factor * 28.0) + ((elapsed as f32 * 0.1).sin() * 2.0);
 
-                        if let Ok(mut r) = rails.lock() {
+                        {
+                            let mut r = rails.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
                             r.voltage_12v = simulated_v12;
                             r.voltage_5v = simulated_v5;
                             r.voltage_3v3 = simulated_v33;
@@ -272,27 +278,34 @@ impl PowerStressManager {
                             total_power_w: total_w,
                         };
 
-                        if let Ok(mut h) = history.lock() {
+                        {
+                            let mut h = history.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+                            if h.len() >= MAX_HISTORY_POINTS {
+                                h.remove(0);
+                            }
                             h.push(data_point);
                         }
 
-                        if let Ok(mut s) = state.lock() {
+                        {
+                            let mut s = state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
                             *s = PowerTestState::Running {
                                 elapsed_secs: elapsed,
-                                target_secs: duration_secs,
+                                target_secs: duration_secs.max(1),
                             };
                         }
 
                         last_sample = Instant::now();
                     }
                 }
+            } else {
+                tracing::error!("Falha ao instanciar thread pool rayon para o teste de energia");
             }
 
             let was_cancelled = cancel.load(Ordering::Relaxed);
             let elapsed_total = start.elapsed().as_secs();
 
             // Build final report
-            let h_snapshot = history.lock().map_or_else(|_| Vec::new(), |h| h.clone());
+            let h_snapshot = history.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone();
             let (max_temp, avg_temp, peak_pwr, min_12, max_12) = if h_snapshot.is_empty() {
                 (78.0, 72.0, 390.0, 11.98, 12.10)
             } else {
@@ -336,10 +349,12 @@ impl PowerStressManager {
                 history: h_snapshot,
             };
 
-            if let Ok(mut r) = last_report.lock() {
+            {
+                let mut r = last_report.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
                 *r = Some(report);
             }
-            if let Ok(mut s) = state.lock() {
+            {
+                let mut s = state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
                 *s = PowerTestState::Finished;
             }
         });

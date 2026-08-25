@@ -338,7 +338,10 @@ fn detect_windows_physical_drives(partitions: &[PartitionInfo]) -> Option<Vec<Ph
                     let serial = item["SerialNumber"].as_str().unwrap_or("00000000").trim().to_string();
                     let firmware = item["FirmwareVersion"].as_str().unwrap_or("1.00").trim().to_string();
                     let bus_type = item["BusType"].as_str().unwrap_or("NVMe").trim().to_string();
-                    let size_bytes = item["Size"].as_u64().unwrap_or(0);
+                    let size_bytes = item["Size"]
+                        .as_u64()
+                        .or_else(|| item["Size"].as_f64().map(|v| v as u64))
+                        .unwrap_or(0);
                     let capacity_gb = (size_bytes as f64) / 1_073_741_824.0;
                     let health_raw = item["HealthStatus"].as_str().unwrap_or("Healthy");
 
@@ -350,14 +353,12 @@ fn detect_windows_physical_drives(partitions: &[PartitionInfo]) -> Option<Vec<Ph
 
                     let (interface, form_factor, tech) = deduce_storage_specs(&model, &bus_type);
 
-                    // Assign matched partitions or default subset
-                    let drive_partitions = partitions.iter().filter(|p| {
-                        if idx == 0 {
-                            p.mount_point.contains('C') || p.mount_point.contains('/')
-                        } else {
-                            !p.mount_point.contains('C')
-                        }
-                    }).cloned().collect();
+                    // Assign partitions to the physical drives
+                    let drive_partitions = if items.len() == 1 || idx == 0 {
+                        partitions.to_vec()
+                    } else {
+                        Vec::new()
+                    };
 
                     let mut drive = PhysicalDriveInfo {
                         model,

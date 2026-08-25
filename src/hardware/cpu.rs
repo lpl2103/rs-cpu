@@ -177,11 +177,7 @@ impl CpuInfo {
             total_freq += freq;
         }
 
-        let avg_freq = if cpus.is_empty() {
-            0.0
-        } else {
-            total_freq / cpus.len() as f32
-        };
+        let avg_freq = total_freq / cpus.len() as f32;
 
         let bus_speed = 100.0_f32;
         let multiplier = if bus_speed > 0.0 {
