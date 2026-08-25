@@ -320,12 +320,12 @@ fn create_fallback_slot(slot: &str, size_mb: u64, mem_type: &str, speed: u32) ->
         memory_type: mem_type.to_string(),
         speed_mhz: speed,
         configured_speed_mhz: speed,
-        module_manufacturer: "Corsair Gaming".to_string(),
-        dram_manufacturer: "SK Hynix".to_string(),
-        part_number: "CMK32GX5M2B6000C30".to_string(),
-        serial_number: "4A8F291C".to_string(),
-        form_factor: "DIMM (288-pin)".to_string(),
-        voltage: 1.35,
+        module_manufacturer: "Fabricante Indisponível (Sem Acesso SMBIOS)".to_string(),
+        dram_manufacturer: "N/D".to_string(),
+        part_number: "N/D".to_string(),
+        serial_number: "N/D".to_string(),
+        form_factor: "DIMM".to_string(),
+        voltage: if mem_type == "DDR5" { 1.10 } else { 1.20 },
         profiles,
     }
 }

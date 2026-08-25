@@ -128,7 +128,7 @@ pub fn render(
 
                 if is_running {
                     let cancel_btn = Button::new(RichText::new("⏹ Parar Teste de RAM").strong().size(13.5).color(Color32::WHITE))
-                        .fill(Color32::from_rgb(220, 38, 38))
+                        .fill(theme.color_error())
                         .corner_radius(CornerRadius::same(6))
                         .min_size(egui::vec2(160.0, 32.0));
 
@@ -137,7 +137,7 @@ pub fn render(
                     }
                 } else {
                     let start_btn = Button::new(RichText::new("🚀 Iniciar Teste de Estabilidade").strong().size(13.5).color(Color32::WHITE))
-                        .fill(Color32::from_rgb(16, 160, 90))
+                        .fill(theme.color_success())
                         .corner_radius(CornerRadius::same(6))
                         .min_size(egui::vec2(220.0, 32.0));
 

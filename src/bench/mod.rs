@@ -147,7 +147,7 @@ impl BenchManager {
                     *status.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = BenchStatus::Idle;
                     return;
                 }
-                benchmark_worker_chunk(25_000);
+                benchmark_worker_chunk(25_000, Some(&cancel));
                 iterations += 25_000;
 
                 let progress = (start.elapsed().as_secs_f32() / duration.as_secs_f32()).min(1.0);
@@ -188,9 +188,10 @@ impl BenchManager {
                     }
 
                     let iters_ref = Arc::clone(&total_multi_iters);
+                    let cancel_ref = &cancel;
                     p.install(|| {
                         (0..thread_count).into_par_iter().for_each(|_| {
-                            benchmark_worker_chunk(25_000);
+                            benchmark_worker_chunk(25_000, Some(cancel_ref));
                             iters_ref.fetch_add(25_000, Ordering::Relaxed);
                         });
                     });
@@ -245,9 +246,10 @@ impl BenchManager {
 
                 if let Ok(p) = pool {
                     while !cancel.load(Ordering::Relaxed) {
+                        let cancel_ref = &cancel;
                         p.install(|| {
                             (0..thread_count).into_par_iter().for_each(|_| {
-                                benchmark_worker_chunk(40_000);
+                                benchmark_worker_chunk(40_000, Some(cancel_ref));
                             });
                         });
 
@@ -277,9 +279,16 @@ impl BenchManager {
 }
 
 /// Deterministic mathematical workload (Mandelbrot arithmetic & Bitwise transformation).
-fn benchmark_worker_chunk(iterations: usize) {
+fn benchmark_worker_chunk(iterations: usize, cancel: Option<&AtomicBool>) {
     let mut acc: f64 = 0.5;
     for i in 0..iterations {
+        if i % 10_000 == 0 {
+            if let Some(c) = cancel {
+                if c.load(Ordering::Relaxed) {
+                    return;
+                }
+            }
+        }
         let x = (i as f64) * 0.001;
         acc = (acc * x + 0.314_159_265_358_979_3).sin().cos().abs();
         let _ = std::hint::black_box(acc);
@@ -292,7 +301,7 @@ mod tests {
 
     #[test]
     fn test_benchmark_chunk_runs() {
-        benchmark_worker_chunk(100);
+        benchmark_worker_chunk(100, None);
     }
 
     #[test]

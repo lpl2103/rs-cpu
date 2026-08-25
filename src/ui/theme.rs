@@ -67,6 +67,39 @@ impl AppTheme {
         }
     }
 
+    /// Semantic success color (Emerald green).
+    #[must_use]
+    pub const fn color_success(self) -> Color32 {
+        self.accent_secondary()
+    }
+
+    /// Semantic warning color (Amber / Orange).
+    #[must_use]
+    pub const fn color_warning(self) -> Color32 {
+        match self {
+            Self::Dark => Color32::from_rgb(245, 158, 11),
+            Self::Light => Color32::from_rgb(217, 119, 6),
+        }
+    }
+
+    /// Semantic error / critical alert color (Crimson red).
+    #[must_use]
+    pub const fn color_error(self) -> Color32 {
+        match self {
+            Self::Dark => Color32::from_rgb(239, 68, 68),
+            Self::Light => Color32::from_rgb(220, 38, 38),
+        }
+    }
+
+    /// Semantic info color (Blue).
+    #[must_use]
+    pub const fn color_info(self) -> Color32 {
+        match self {
+            Self::Dark => Color32::from_rgb(59, 130, 246),
+            Self::Light => Color32::from_rgb(37, 99, 235),
+        }
+    }
+
     /// Primary text color.
     #[must_use]
     pub const fn text_primary(self) -> Color32 {

@@ -165,15 +165,15 @@ impl CpuInfo {
             return;
         }
 
-        let mut core_frequencies = Vec::with_capacity(cpus.len());
-        let mut per_core_load = Vec::with_capacity(cpus.len());
+        self.live.core_frequencies_mhz.clear();
+        self.live.per_core_load_pct.clear();
         let mut total_freq = 0.0;
 
         for cpu in cpus {
             let freq = cpu.frequency() as f32;
             let load = cpu.cpu_usage();
-            core_frequencies.push(freq);
-            per_core_load.push(load);
+            self.live.core_frequencies_mhz.push(freq);
+            self.live.per_core_load_pct.push(load);
             total_freq += freq;
         }
 
@@ -186,12 +186,19 @@ impl CpuInfo {
             0.0
         };
 
-        // Detect CPU temperature from sensors
+        // Detect CPU temperature from sensors without heap allocations
         let mut cpu_temp: f32 = 0.0;
         let mut temp_count = 0;
         for component in components {
-            let label = component.label().to_lowercase();
-            if label.contains("cpu") || label.contains("core") || label.contains("package") || label.contains("tctl") || label.contains("tdie") {
+            let label = component.label();
+            let is_cpu = label.split(|c: char| !c.is_alphanumeric()).any(|part| {
+                part.eq_ignore_ascii_case("cpu")
+                    || part.eq_ignore_ascii_case("core")
+                    || part.eq_ignore_ascii_case("package")
+                    || part.eq_ignore_ascii_case("tctl")
+                    || part.eq_ignore_ascii_case("tdie")
+            });
+            if is_cpu {
                 if let Some(t) = component.temperature() {
                     if t > 0.0 && t < 125.0 {
                         cpu_temp += t;
@@ -215,16 +222,12 @@ impl CpuInfo {
             (850.0 + (temp_factor * 1150.0)) as u32
         };
 
-        self.live = CpuLiveMetrics {
-            core_frequencies_mhz: core_frequencies,
-            global_load_pct: system.global_cpu_usage(),
-            per_core_load_pct: per_core_load,
-            avg_frequency_mhz: avg_freq,
-            bus_speed_mhz: bus_speed,
-            multiplier,
-            cpu_temp_c: final_temp,
-            fan_speed_rpm: fan_rpm,
-        };
+        self.live.global_load_pct = system.global_cpu_usage();
+        self.live.avg_frequency_mhz = avg_freq;
+        self.live.bus_speed_mhz = bus_speed;
+        self.live.multiplier = multiplier;
+        self.live.cpu_temp_c = final_temp;
+        self.live.fan_speed_rpm = fan_rpm;
     }
 }
 
@@ -397,8 +400,14 @@ fn guess_code_name(
 ) -> String {
     let name_lower = name.to_lowercase();
     if vendor.contains("AMD") || name_lower.contains("ryzen") || name_lower.contains("amd") {
-        if name_lower.contains("9950") || name_lower.contains("9900") || name_lower.contains("9700") || name_lower.contains("9600") || name_lower.contains("granite") {
+        if name_lower.contains("9950") || name_lower.contains("9900") || name_lower.contains("9800") || name_lower.contains("9700") || name_lower.contains("9600") || name_lower.contains("granite") {
             return "Granite Ridge (Zen 5)".to_string();
+        }
+        if name_lower.contains("hx 3") || name_lower.contains("strix") {
+            return "Strix Point (Zen 5)".to_string();
+        }
+        if name_lower.contains("8700") || name_lower.contains("8600") || name_lower.contains("8500") || name_lower.contains("hawk") || name_lower.contains("phoenix") {
+            return "Hawk Point / Phoenix (Zen 4)".to_string();
         }
         if name_lower.contains("7950") || name_lower.contains("7900") || name_lower.contains("7800") || name_lower.contains("7700") || name_lower.contains("7600") || name_lower.contains("raphael") {
             return "Raphael (Zen 4)".to_string();
@@ -425,6 +434,12 @@ fn guess_code_name(
     }
 
     if vendor.contains("Intel") || name_lower.contains("intel") || name_lower.contains("core") {
+        if name_lower.contains("285") || name_lower.contains("265") || name_lower.contains("245") || name_lower.contains("arrow") {
+            return "Arrow Lake (Core Ultra 200)".to_string();
+        }
+        if name_lower.contains("185") || name_lower.contains("165") || name_lower.contains("155") || name_lower.contains("meteor") {
+            return "Meteor Lake (Core Ultra 100)".to_string();
+        }
         if name_lower.contains("14900") || name_lower.contains("14700") || name_lower.contains("14600") || name_lower.contains("14400") {
             return "Raptor Lake Refresh".to_string();
         }
@@ -443,8 +458,8 @@ fn guess_code_name(
         if name_lower.contains("9900") || name_lower.contains("9700") || name_lower.contains("9600") {
             return "Coffee Lake Refresh".to_string();
         }
-        if name_lower.contains("ultra") || name_lower.contains("meteor") {
-            return "Meteor Lake / Arrow Lake".to_string();
+        if name_lower.contains("ultra") {
+            return "Core Ultra Microarchitecture".to_string();
         }
         return "Intel Core Microarchitecture".to_string();
     }

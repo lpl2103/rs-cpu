@@ -133,7 +133,7 @@ pub fn render(
                 ui.horizontal(|ui| {
                     if state.is_rendering {
                         let stop_btn = Button::new(RichText::new("⏹ Parar Teste de Render").strong().size(13.5).color(Color32::WHITE))
-                            .fill(Color32::from_rgb(220, 38, 38))
+                            .fill(theme.color_error())
                             .corner_radius(CornerRadius::same(6))
                             .min_size(egui::vec2(180.0, 32.0));
 
@@ -142,7 +142,7 @@ pub fn render(
                         }
                     } else {
                         let start_btn = Button::new(RichText::new("▶ Iniciar Render Test 3D").strong().size(13.5).color(Color32::WHITE))
-                            .fill(Color32::from_rgb(16, 160, 90))
+                            .fill(theme.color_success())
                             .corner_radius(CornerRadius::same(6))
                             .min_size(egui::vec2(200.0, 32.0));
 
@@ -327,30 +327,25 @@ fn render_3d_viewport(ui: &mut Ui, theme: AppTheme, state: &mut GraphicsTabState
         [x2, y2, z2]
     };
 
-    let projected: Vec<egui::Pos2> = vertices
-        .iter()
-        .map(|&v| {
-            let r = rotate(v);
-            let camera_dist = 3.5;
-            let focal = 180.0;
-            let z_proj = r[2] + camera_dist;
-            let px = center.x + (r[0] * focal / z_proj);
-            let py = center.y - (r[1] * focal / z_proj);
-            egui::pos2(px, py)
-        })
-        .collect();
+    // Zero-allocation stack array for projected 3D vertices
+    let mut projected = [egui::pos2(0.0, 0.0); 8];
+    for (i, &v) in vertices.iter().enumerate() {
+        let r = rotate(v);
+        let camera_dist = 3.5;
+        let focal = 180.0;
+        let z_proj = r[2] + camera_dist;
+        let px = center.x + (r[0] * focal / z_proj);
+        let py = center.y - (r[1] * focal / z_proj);
+        projected[i] = egui::pos2(px, py);
+    }
 
-    // Sort faces by depth
-    let mut face_depths: Vec<(usize, f32)> = faces
-        .iter()
-        .enumerate()
-        .map(|(idx, (indices, _))| {
-            let avg_z = indices.iter().map(|&i| rotate(vertices[i])[2]).sum::<f32>() / 4.0;
-            (idx, avg_z)
-        })
-        .collect();
-
-    face_depths.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+    // Zero-allocation stack array for face depths
+    let mut face_depths = [(0usize, 0.0_f32); 6];
+    for (idx, &(indices, _)) in faces.iter().enumerate() {
+        let avg_z = indices.iter().map(|&i| rotate(vertices[i])[2]).sum::<f32>() / 4.0;
+        face_depths[idx] = (idx, avg_z);
+    }
+    face_depths.sort_unstable_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
 
     // Draw faces with diffuse lighting
     let light_dir = [-0.5_f32, 0.8, -0.6];

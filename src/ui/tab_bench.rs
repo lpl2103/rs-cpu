@@ -74,7 +74,7 @@ pub fn render(
                     RichText::new(stress_text)
                         .strong()
                         .size(13.5)
-                        .color(if stress_active { Color32::from_rgb(239, 68, 68) } else { theme.text_primary() }),
+                        .color(if stress_active { theme.color_error() } else { theme.text_primary() }),
                 )
                 .min_size(egui::vec2(140.0, 34.0));
 
@@ -83,7 +83,7 @@ pub fn render(
                 }
 
                 if is_busy
-                    && ui.button(RichText::new("Cancelar").color(Color32::from_rgb(239, 68, 68))).clicked()
+                    && ui.button(RichText::new("Cancelar").color(theme.color_error())).clicked()
                 {
                     bench.stop();
                 }
@@ -102,7 +102,7 @@ pub fn render(
                 BenchStatus::StressTesting { elapsed_secs } => {
                     ui.add_space(10.0);
                     ui.horizontal(|ui| {
-                        ui.label(RichText::new("🔥 Teste de Estresse em Andamento:").color(Color32::from_rgb(239, 68, 68)).strong().size(13.5));
+                        ui.label(RichText::new("🔥 Teste de Estresse em Andamento:").color(theme.color_error()).strong().size(13.5));
                         ui.label(RichText::new(format!("{elapsed_secs}s ativo")).color(theme.text_primary()).size(13.5));
                     });
                 }

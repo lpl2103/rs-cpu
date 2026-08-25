@@ -16,7 +16,7 @@ pub use memory::{
 pub use motherboard::MotherboardInfo;
 pub use power::{PowerRailTelemetry, PowerStressManager, PowerTestReport, PowerTestState};
 pub use storage::{
-    DiskBenchmarkManager, DiskBenchmarkResult, DiskBenchmarkStatus, PartitionInfo,
+    DiskBenchmarkManager, DiskBenchmarkResult, DiskBenchmarkStage, DiskBenchmarkStatus, PartitionInfo,
     PhysicalDriveInfo, SmartAttribute, StorageInfo,
 };
 
