@@ -240,6 +240,244 @@ pub struct StorageInfo {
     pub all_partitions: Vec<PartitionInfo>,
 }
 
+/// Results of the storage throughput benchmark.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct DiskBenchmarkResult {
+    /// Sequential Read speed in MB/s.
+    pub seq_read_mbs: f64,
+    /// Sequential Write speed in MB/s.
+    pub seq_write_mbs: f64,
+    /// Random 4K Read speed in MB/s.
+    pub rnd_read_mbs: f64,
+    /// Random 4K Read IOPS.
+    pub rnd_read_iops: u64,
+    /// Random 4K Write speed in MB/s.
+    pub rnd_write_mbs: f64,
+    /// Random 4K Write IOPS.
+    pub rnd_write_iops: u64,
+}
+
+/// Execution status of the disk benchmark.
+#[derive(Debug, Clone, PartialEq)]
+pub enum DiskBenchmarkStatus {
+    /// Engine idle.
+    Idle,
+    /// Running specific benchmark stage.
+    Running {
+        /// Description of active stage (e.g., "Gravando Sequencial (1 MB)...").
+        stage: String,
+        /// Progress from 0.0 to 1.0.
+        progress: f32,
+    },
+    /// Finished benchmark with results.
+    Finished,
+}
+
+const BENCH_FILE_SIZE_MB: usize = 64;
+const BENCH_CHUNK_SIZE_1MB: usize = 1024 * 1024;
+const BENCH_CHUNK_SIZE_4K: usize = 4096;
+const BENCH_CHUNKS_4K_COUNT: usize = 4000;
+
+/// Controller for storage performance benchmarks (`CrystalDiskMark` style).
+#[derive(Debug, Clone)]
+pub struct DiskBenchmarkManager {
+    /// Current execution status.
+    pub status: std::sync::Arc<std::sync::Mutex<DiskBenchmarkStatus>>,
+    /// Benchmark results.
+    pub results: std::sync::Arc<std::sync::Mutex<DiskBenchmarkResult>>,
+    /// Cancellation flag.
+    pub cancel_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
+}
+
+impl Default for DiskBenchmarkManager {
+    fn default() -> Self {
+        Self {
+            status: std::sync::Arc::new(std::sync::Mutex::new(DiskBenchmarkStatus::Idle)),
+            results: std::sync::Arc::new(std::sync::Mutex::new(DiskBenchmarkResult::default())),
+            cancel_flag: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        }
+    }
+}
+
+impl DiskBenchmarkManager {
+    /// Starts the storage benchmark on the specified target directory/drive.
+    pub fn start_benchmark(&self, target_dir: Option<std::path::PathBuf>) {
+        use std::fs::OpenOptions;
+        use std::io::{Read, Seek, SeekFrom, Write};
+        use std::sync::atomic::Ordering;
+        use std::time::Instant;
+
+        let status = std::sync::Arc::clone(&self.status);
+        let results = std::sync::Arc::clone(&self.results);
+        let cancel = std::sync::Arc::clone(&self.cancel_flag);
+
+        cancel.store(false, Ordering::SeqCst);
+
+        std::thread::spawn(move || {
+            let base_path = target_dir.unwrap_or_else(std::env::temp_dir);
+            let test_file = base_path.join(".m_cpu_storage_benchmark.tmp");
+
+            let mut final_res = DiskBenchmarkResult::default();
+
+            // 1. Sequential Write Benchmark
+            {
+                *status.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = DiskBenchmarkStatus::Running {
+                    stage: "1/4 Gravando Sequencial (1 MB)...".to_string(),
+                    progress: 0.1,
+                };
+
+                let buffer = vec![0x5A_u8; BENCH_CHUNK_SIZE_1MB];
+                let start = Instant::now();
+
+                let file_res = OpenOptions::new()
+                    .write(true)
+                    .create(true)
+                    .truncate(true)
+                    .open(&test_file);
+
+                if let Ok(mut file) = file_res {
+                    for i in 0..BENCH_FILE_SIZE_MB {
+                        if cancel.load(Ordering::Relaxed) {
+                            let _ = std::fs::remove_file(&test_file);
+                            *status.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = DiskBenchmarkStatus::Idle;
+                            return;
+                        }
+                        if file.write_all(&buffer).is_err() { break; }
+                        let progress = 0.1 + ((i as f32 / BENCH_FILE_SIZE_MB as f32) * 0.2);
+                        *status.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = DiskBenchmarkStatus::Running {
+                            stage: "1/4 Gravando Sequencial (1 MB)...".to_string(),
+                            progress,
+                        };
+                    }
+                    let _ = file.flush();
+                    let elapsed = start.elapsed().as_secs_f64().max(0.001);
+                    final_res.seq_write_mbs = (BENCH_FILE_SIZE_MB as f64) / elapsed;
+                    results.lock().unwrap_or_else(std::sync::PoisonError::into_inner).seq_write_mbs = final_res.seq_write_mbs;
+                }
+            }
+
+            // 2. Sequential Read Benchmark
+            {
+                *status.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = DiskBenchmarkStatus::Running {
+                    stage: "2/4 Lendo Sequencial (1 MB)...".to_string(),
+                    progress: 0.35,
+                };
+
+                let mut buffer = vec![0u8; BENCH_CHUNK_SIZE_1MB];
+                let start = Instant::now();
+
+                if let Ok(mut file) = OpenOptions::new().read(true).open(&test_file) {
+                    for i in 0..BENCH_FILE_SIZE_MB {
+                        if cancel.load(Ordering::Relaxed) {
+                            let _ = std::fs::remove_file(&test_file);
+                            *status.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = DiskBenchmarkStatus::Idle;
+                            return;
+                        }
+                        if file.read_exact(&mut buffer).is_err() { break; }
+                        let progress = 0.35 + ((i as f32 / BENCH_FILE_SIZE_MB as f32) * 0.2);
+                        *status.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = DiskBenchmarkStatus::Running {
+                            stage: "2/4 Lendo Sequencial (1 MB)...".to_string(),
+                            progress,
+                        };
+                    }
+                    let elapsed = start.elapsed().as_secs_f64().max(0.001);
+                    final_res.seq_read_mbs = (BENCH_FILE_SIZE_MB as f64) / elapsed;
+                    results.lock().unwrap_or_else(std::sync::PoisonError::into_inner).seq_read_mbs = final_res.seq_read_mbs;
+                }
+            }
+
+            // 3. Random 4K Write Benchmark
+            {
+                *status.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = DiskBenchmarkStatus::Running {
+                    stage: "3/4 Gravando Aleatório 4K (IOPS)...".to_string(),
+                    progress: 0.60,
+                };
+
+                let buffer = vec![0xA5_u8; BENCH_CHUNK_SIZE_4K];
+                let start = Instant::now();
+
+                if let Ok(mut file) = OpenOptions::new().write(true).open(&test_file) {
+                    for i in 0..BENCH_CHUNKS_4K_COUNT {
+                        if cancel.load(Ordering::Relaxed) {
+                            let _ = std::fs::remove_file(&test_file);
+                            *status.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = DiskBenchmarkStatus::Idle;
+                            return;
+                        }
+                        let offset = ((i * 7919) % (BENCH_FILE_SIZE_MB * BENCH_CHUNK_SIZE_1MB - BENCH_CHUNK_SIZE_4K)) as u64;
+                        let _ = file.seek(SeekFrom::Start(offset));
+                        if file.write_all(&buffer).is_err() { break; }
+
+                        if i % 200 == 0 {
+                            let progress = 0.60 + ((i as f32 / BENCH_CHUNKS_4K_COUNT as f32) * 0.2);
+                            *status.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = DiskBenchmarkStatus::Running {
+                                stage: "3/4 Gravando Aleatório 4K (IOPS)...".to_string(),
+                                progress,
+                            };
+                        }
+                    }
+                    let _ = file.flush();
+                    let elapsed = start.elapsed().as_secs_f64().max(0.001);
+                    let total_mb = (BENCH_CHUNKS_4K_COUNT * BENCH_CHUNK_SIZE_4K) as f64 / (1024.0 * 1024.0);
+                    final_res.rnd_write_mbs = total_mb / elapsed;
+                    final_res.rnd_write_iops = ((BENCH_CHUNKS_4K_COUNT as f64) / elapsed) as u64;
+                    let mut r = results.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+                    r.rnd_write_mbs = final_res.rnd_write_mbs;
+                    r.rnd_write_iops = final_res.rnd_write_iops;
+                }
+            }
+
+            // 4. Random 4K Read Benchmark
+            {
+                *status.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = DiskBenchmarkStatus::Running {
+                    stage: "4/4 Lendo Aleatório 4K (IOPS)...".to_string(),
+                    progress: 0.82,
+                };
+
+                let mut buffer = vec![0u8; BENCH_CHUNK_SIZE_4K];
+                let start = Instant::now();
+
+                if let Ok(mut file) = OpenOptions::new().read(true).open(&test_file) {
+                    for i in 0..BENCH_CHUNKS_4K_COUNT {
+                        if cancel.load(Ordering::Relaxed) {
+                            let _ = std::fs::remove_file(&test_file);
+                            *status.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = DiskBenchmarkStatus::Idle;
+                            return;
+                        }
+                        let offset = ((i * 7919) % (BENCH_FILE_SIZE_MB * BENCH_CHUNK_SIZE_1MB - BENCH_CHUNK_SIZE_4K)) as u64;
+                        let _ = file.seek(SeekFrom::Start(offset));
+                        if file.read_exact(&mut buffer).is_err() { break; }
+
+                        if i % 200 == 0 {
+                            let progress = 0.82 + ((i as f32 / BENCH_CHUNKS_4K_COUNT as f32) * 0.18);
+                            *status.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = DiskBenchmarkStatus::Running {
+                                stage: "4/4 Lendo Aleatório 4K (IOPS)...".to_string(),
+                                progress,
+                            };
+                        }
+                    }
+                    let elapsed = start.elapsed().as_secs_f64().max(0.001);
+                    let total_mb = (BENCH_CHUNKS_4K_COUNT * BENCH_CHUNK_SIZE_4K) as f64 / (1024.0 * 1024.0);
+                    final_res.rnd_read_mbs = total_mb / elapsed;
+                    final_res.rnd_read_iops = ((BENCH_CHUNKS_4K_COUNT as f64) / elapsed) as u64;
+                    let mut r = results.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+                    r.rnd_read_mbs = final_res.rnd_read_mbs;
+                    r.rnd_read_iops = final_res.rnd_read_iops;
+                }
+            }
+
+            // Cleanup test file
+            let _ = std::fs::remove_file(&test_file);
+
+            *status.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = DiskBenchmarkStatus::Finished;
+        });
+    }
+
+    /// Stops the running storage benchmark.
+    pub fn cancel(&self) {
+        self.cancel_flag.store(true, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
 impl StorageInfo {
     /// Detects all physical storage drives and volumes.
     #[must_use]

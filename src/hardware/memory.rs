@@ -411,6 +411,158 @@ fn generate_timing_profiles(mem_type: &str, target_speed: u32) -> Vec<TimingProf
     }
 }
 
+/// Results of the RAM stability and integrity stress test.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct RamStressResult {
+    /// Total megabytes allocated and tested.
+    pub allocated_mb: usize,
+    /// Total megabytes read/written and verified across cycles.
+    pub total_verified_mb: u64,
+    /// Number of completed full memory cycles.
+    pub cycles_completed: u32,
+    /// Number of bit-flip / memory errors detected (0 = 100% stable).
+    pub error_count: u64,
+    /// Elapsed seconds.
+    pub elapsed_secs: u64,
+    /// Current test bandwidth in MB/s.
+    pub speed_mbs: f64,
+}
+
+/// Execution status of the RAM stability test.
+#[derive(Debug, Clone, PartialEq)]
+pub enum RamStressStatus {
+    /// Engine idle.
+    Idle,
+    /// Running specific stress pattern.
+    Running {
+        /// Description of current test pattern (e.g., "Padrão 0xAA/0x55 (Inversão de Bits)").
+        pattern_name: String,
+        /// Progress of current cycle (0.0 to 1.0).
+        cycle_progress: f32,
+    },
+    /// Finished or stopped.
+    Finished,
+}
+
+/// Controller for RAM stability stress tests (`MemTest` style).
+#[derive(Debug, Clone)]
+pub struct RamStressManager {
+    /// Current execution status.
+    pub status: std::sync::Arc<std::sync::Mutex<RamStressStatus>>,
+    /// Current metrics and results.
+    pub results: std::sync::Arc<std::sync::Mutex<RamStressResult>>,
+    /// Cancellation flag.
+    pub cancel_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    /// Selected test size in MB (e.g., 1024 = 1GB).
+    pub selected_mb: usize,
+}
+
+impl Default for RamStressManager {
+    fn default() -> Self {
+        Self {
+            status: std::sync::Arc::new(std::sync::Mutex::new(RamStressStatus::Idle)),
+            results: std::sync::Arc::new(std::sync::Mutex::new(RamStressResult::default())),
+            cancel_flag: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            selected_mb: 1024, // 1 GB default
+        }
+    }
+}
+
+impl RamStressManager {
+    /// Starts the RAM stability stress test.
+    pub fn start_test(&self, target_mb: usize) {
+        use rayon::prelude::*;
+        use std::sync::atomic::{AtomicU64, Ordering};
+        use std::time::Instant;
+
+        let status = std::sync::Arc::clone(&self.status);
+        let results = std::sync::Arc::clone(&self.results);
+        let cancel = std::sync::Arc::clone(&self.cancel_flag);
+
+        cancel.store(false, Ordering::SeqCst);
+
+        std::thread::spawn(move || {
+            let chunk_mb = target_mb.clamp(256, 8192);
+            let bytes_count = chunk_mb * 1024 * 1024;
+            
+            // Allocate test memory buffer
+            let mut memory_buffer = vec![0u8; bytes_count];
+            let start = Instant::now();
+            let mut cycle: u32 = 0;
+            let total_verified = AtomicU64::new(0);
+            let error_count = AtomicU64::new(0);
+
+            let patterns: &[(&str, u8, u8)] = &[
+                ("Padrão 1/3: Inversão Alternada (0xAA / 0x55)", 0xAA, 0x55),
+                ("Padrão 2/3: Walking Bits (0x0F / 0xF0)", 0x0F, 0xF0),
+                ("Padrão 3/3: Stress de Alta Frequência (0xFF / 0x00)", 0xFF, 0x00),
+            ];
+
+            while !cancel.load(Ordering::Relaxed) {
+                cycle += 1;
+
+                for (idx, (name, write_pat, check_pat)) in patterns.iter().enumerate() {
+                    if cancel.load(Ordering::Relaxed) {
+                        break;
+                    }
+
+                    let cycle_prog = (idx as f32) / (patterns.len() as f32);
+                    *status.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = RamStressStatus::Running {
+                        pattern_name: (*name).to_string(),
+                        cycle_progress: cycle_prog,
+                    };
+
+                    // Parallel write pattern
+                    let chunk_size = 1024 * 1024;
+                    memory_buffer.par_chunks_mut(chunk_size).for_each(|chunk| {
+                        chunk.fill(*write_pat);
+                    });
+
+                    // Parallel verify and invert
+                    let errs = AtomicU64::new(0);
+                    memory_buffer.par_chunks_mut(chunk_size).for_each(|chunk| {
+                        for byte in chunk.iter_mut() {
+                            if *byte != *write_pat {
+                                errs.fetch_add(1, Ordering::Relaxed);
+                            }
+                            *byte = *check_pat;
+                        }
+                    });
+
+                    let found_errs = errs.load(Ordering::Relaxed);
+                    if found_errs > 0 {
+                        error_count.fetch_add(found_errs, Ordering::Relaxed);
+                    }
+
+                    total_verified.fetch_add((chunk_mb * 2) as u64, Ordering::Relaxed);
+
+                    let elapsed_s = start.elapsed().as_secs();
+                    let elapsed_f = start.elapsed().as_secs_f64().max(0.001);
+                    let speed = (total_verified.load(Ordering::Relaxed) as f64) / elapsed_f;
+
+                    let mut r = results.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+                    r.allocated_mb = chunk_mb;
+                    r.total_verified_mb = total_verified.load(Ordering::Relaxed);
+                    r.cycles_completed = cycle;
+                    r.error_count = error_count.load(Ordering::Relaxed);
+                    r.elapsed_secs = elapsed_s;
+                    r.speed_mbs = speed;
+                }
+
+                // Short throttle sleep to allow UI responsiveness
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            }
+
+            *status.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = RamStressStatus::Finished;
+        });
+    }
+
+    /// Stops the running RAM stress test.
+    pub fn cancel(&self) {
+        self.cancel_flag.store(true, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

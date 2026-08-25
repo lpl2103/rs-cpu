@@ -2,14 +2,17 @@
 
 use super::theme::AppTheme;
 use super::widgets::{load_gauge, section_header, spec_row, stat_metric_box};
+use crate::hardware::storage::{DiskBenchmarkManager, DiskBenchmarkStatus};
 use crate::hardware::SystemHardware;
-use eframe::egui::{self, Color32, CornerRadius, Margin, RichText, ScrollArea, Stroke, Ui};
+use eframe::egui::{self, Button, Color32, CornerRadius, Margin, RichText, ScrollArea, Stroke, Ui};
 
 /// State for the storage tab view.
 #[derive(Debug, Clone, Default)]
 pub struct StorageTabState {
     /// Currently selected storage drive index.
     pub selected_drive: usize,
+    /// Disk benchmark manager instance.
+    pub bench: DiskBenchmarkManager,
 }
 
 /// Renders the SSD-Z style Storage diagnostics tab in Portuguese (PT-BR).
@@ -47,6 +50,66 @@ pub fn render(
                             ui.selectable_value(&mut state.selected_drive, idx, label);
                         }
                     });
+            });
+        });
+
+        ui.add_space(8.0);
+
+        // --- NOVO PAINEL: BENCHMARK DE ARMAZENAMENTO (CRYSTALDISKMARK STYLE) ---
+        theme.card_frame().show(ui, |ui| {
+            section_header(ui, theme, "🚀", "Benchmark de Velocidade de Disco (Estilo CrystalDiskMark)");
+
+            let status = state.bench.status.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone();
+            let results = state.bench.results.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone();
+            let is_running = matches!(status, DiskBenchmarkStatus::Running { .. });
+
+            ui.columns(4, |cols| {
+                cols[0].vertical(|ui| {
+                    stat_metric_box(ui, theme, "SEQ Leitura (1MB)", &format!("{:.1} MB/s", results.seq_read_mbs), "Throughput Sequencial");
+                });
+                cols[1].vertical(|ui| {
+                    stat_metric_box(ui, theme, "SEQ Escrita (1MB)", &format!("{:.1} MB/s", results.seq_write_mbs), "Throughput Sequencial");
+                });
+                cols[2].vertical(|ui| {
+                    stat_metric_box(ui, theme, "RND 4K Leitura", &format!("{:.1} MB/s", results.rnd_read_mbs), &format!("{} IOPS", results.rnd_read_iops));
+                });
+                cols[3].vertical(|ui| {
+                    stat_metric_box(ui, theme, "RND 4K Escrita", &format!("{:.1} MB/s", results.rnd_write_mbs), &format!("{} IOPS", results.rnd_write_iops));
+                });
+            });
+
+            ui.add_space(10.0);
+
+            if let DiskBenchmarkStatus::Running { stage, progress } = &status {
+                ui.label(RichText::new(stage).size(13.5).color(theme.accent_primary()).strong());
+                ui.add_space(4.0);
+                load_gauge(ui, theme, "Progresso do Teste de I/O", progress * 100.0, &format!("{:.0}%", progress * 100.0));
+                ui.add_space(8.0);
+            }
+
+            ui.horizontal(|ui| {
+                if is_running {
+                    let cancel_btn = Button::new(RichText::new("⏹ Cancelar Benchmark").strong().size(13.5).color(Color32::WHITE))
+                        .fill(Color32::from_rgb(220, 38, 38))
+                        .corner_radius(CornerRadius::same(6))
+                        .min_size(egui::vec2(160.0, 32.0));
+
+                    if ui.add(cancel_btn).clicked() {
+                        state.bench.cancel();
+                    }
+                } else {
+                    let start_btn = Button::new(RichText::new("🚀 Iniciar Benchmark do Disco").strong().size(13.5).color(Color32::WHITE))
+                        .fill(Color32::from_rgb(16, 160, 90))
+                        .corner_radius(CornerRadius::same(6))
+                        .min_size(egui::vec2(220.0, 32.0));
+
+                    if ui.add(start_btn).clicked() {
+                        let target_path = hardware.storage.drives.get(state.selected_drive).and_then(|d| {
+                            d.partitions.first().map(|p| std::path::PathBuf::from(&p.mount_point))
+                        });
+                        state.bench.start_benchmark(target_path);
+                    }
+                }
             });
         });
 

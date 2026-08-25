@@ -8,7 +8,7 @@ use crate::ui::{
     tab_about, tab_bench, tab_cpu, tab_graphics, tab_mainboard, tab_memory, tab_power,
     tab_storage, tab_unified, AboutTabState, GraphicsTabState, MemoryTabState, StorageTabState,
 };
-use eframe::egui::{self, Button, CentralPanel, Color32, CornerRadius, RichText, TopBottomPanel};
+use eframe::egui::{self, Button, CentralPanel, Color32, CornerRadius, RichText, Stroke, TopBottomPanel};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -174,28 +174,80 @@ impl eframe::App for ModernCpuZApp {
             self.last_applied_theme = Some(self.theme);
         }
 
-        // Top Navigation Bar
+        // Top Navigation Bar (2-Tier Layout: Header Row + Dedicated Tab Bar Row)
         TopBottomPanel::top("top_panel")
             .frame(
                 egui::Frame::new()
                     .fill(self.theme.card_bg())
                     .stroke(egui::Stroke::new(1.0_f32, self.theme.card_border()))
-                    .inner_margin(egui::Margin::symmetric(14, 10)),
+                    .inner_margin(egui::Margin::symmetric(16, 10)),
             )
             .show(ctx, |ui| {
+                // Tier 1: App Header & Right Actions
                 ui.horizontal(|ui| {
-                    // Logo
                     ui.label(
                         RichText::new("⚡ M-CPU")
                             .size(19.0)
                             .color(self.theme.accent_primary())
                             .strong(),
                     );
-                    ui.add_space(10.0);
-                    ui.separator();
-                    ui.add_space(8.0);
+                    ui.add_space(6.0);
 
-                    // Tab Navigation Buttons (Clean PT-BR without modifier boxes)
+                    // Version Badge
+                    egui::Frame::new()
+                        .fill(match self.theme {
+                            AppTheme::Dark => Color32::from_rgb(18, 42, 60),
+                            AppTheme::Light => Color32::from_rgb(220, 238, 255),
+                        })
+                        .corner_radius(CornerRadius::same(4))
+                        .inner_margin(egui::Margin::symmetric(6, 2))
+                        .show(ui, |ui| {
+                            ui.label(
+                                RichText::new("v0.1.0 PRO")
+                                    .size(11.0)
+                                    .color(self.theme.accent_primary())
+                                    .strong(),
+                            );
+                        });
+
+                    ui.add_space(8.0);
+                    ui.label(
+                        RichText::new("● Telemetria em Tempo Real")
+                            .size(12.0)
+                            .color(self.theme.accent_secondary()),
+                    );
+
+                    // Right-aligned controls
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        let theme_icon = match self.theme {
+                            AppTheme::Dark => "☀ Tema Claro",
+                            AppTheme::Light => "🌙 Tema Escuro",
+                        };
+
+                        if ui
+                            .button(RichText::new(theme_icon).size(13.0).color(self.theme.text_primary()))
+                            .on_hover_text("Alternar entre Tema Claro e Escuro")
+                            .clicked()
+                        {
+                            self.theme = self.theme.toggle();
+                        }
+
+                        if ui
+                            .button(RichText::new("🔄 Atualizar").size(13.0).color(self.theme.text_primary()))
+                            .on_hover_text("Atualizar toda a telemetria de hardware agora")
+                            .clicked()
+                        {
+                            self.engine.refresh_live_metrics();
+                        }
+                    });
+                });
+
+                ui.add_space(8.0);
+                ui.separator();
+                ui.add_space(6.0);
+
+                // Tier 2: Dedicated Tab Navigation Buttons (Guaranteed 0 overlap)
+                ui.horizontal_wrapped(|ui| {
                     let tabs = [
                         (ActiveTab::Unified, "🖥 Visão Geral"),
                         (ActiveTab::Cpu, "🔲 Processador"),
@@ -224,43 +276,25 @@ impl eframe::App for ModernCpuZApp {
                         let btn = Button::new(text)
                             .fill(if is_active {
                                 match self.theme {
-                                    AppTheme::Dark => Color32::from_rgb(30, 42, 60),
-                                    AppTheme::Light => Color32::from_rgb(222, 235, 252),
+                                    AppTheme::Dark => Color32::from_rgb(28, 44, 68),
+                                    AppTheme::Light => Color32::from_rgb(218, 235, 255),
                                 }
                             } else {
                                 Color32::TRANSPARENT
                             })
+                            .stroke(if is_active {
+                                Stroke::new(1.0_f32, self.theme.accent_primary())
+                            } else {
+                                Stroke::NONE
+                            })
                             .corner_radius(CornerRadius::same(6))
-                            .min_size(egui::vec2(0.0, 26.0));
+                            .min_size(egui::vec2(0.0, 28.0));
 
                         if ui.add(btn).clicked() {
                             self.active_tab = tab;
                         }
+                        ui.add_space(2.0);
                     }
-
-                    // Right-aligned controls
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        let theme_icon = match self.theme {
-                            AppTheme::Dark => "☀ Claro",
-                            AppTheme::Light => "🌙 Escuro",
-                        };
-
-                        if ui
-                            .button(RichText::new(theme_icon).size(13.0).color(self.theme.text_primary()))
-                            .on_hover_text("Alternar entre Tema Claro e Escuro")
-                            .clicked()
-                        {
-                            self.theme = self.theme.toggle();
-                        }
-
-                        if ui
-                            .button(RichText::new("🔄 Atualizar").size(13.0).color(self.theme.text_primary()))
-                            .on_hover_text("Atualizar toda a telemetria de hardware agora")
-                            .clicked()
-                        {
-                            self.engine.refresh_live_metrics();
-                        }
-                    });
                 });
             });
 
