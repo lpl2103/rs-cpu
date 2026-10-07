@@ -79,34 +79,28 @@ impl SidecarProcess {
         use std::os::windows::process::CommandExt;
         const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
-        let candidate_paths = [
-            std::path::PathBuf::from(r".\LibreHardwareMonitor.NET.10\LibreHardwareMonitor.exe"),
-            std::path::PathBuf::from(r"..\LibreHardwareMonitor.NET.10\LibreHardwareMonitor.exe"),
-            std::path::PathBuf::from(r".\LibreHardwareMonitor\LibreHardwareMonitor.exe"),
-            std::path::PathBuf::from(r"D:\src\cpu-z\LibreHardwareMonitor.NET.10\LibreHardwareMonitor.exe"),
-        ];
+        let mut candidate_paths = Vec::new();
+
+        if let Ok(current) = std::env::current_exe() {
+            if let Some(parent) = current.parent() {
+                candidate_paths.push(parent.join("LibreHardwareMonitor.NET.10").join("LibreHardwareMonitor.exe"));
+                candidate_paths.push(parent.join("LibreHardwareMonitor").join("LibreHardwareMonitor.exe"));
+                if let Some(grandparent) = parent.parent() {
+                    candidate_paths.push(grandparent.join("LibreHardwareMonitor.NET.10").join("LibreHardwareMonitor.exe"));
+                    candidate_paths.push(grandparent.join("LibreHardwareMonitor").join("LibreHardwareMonitor.exe"));
+                }
+            }
+        }
+
+        candidate_paths.push(std::path::PathBuf::from(r".\LibreHardwareMonitor.NET.10\LibreHardwareMonitor.exe"));
+        candidate_paths.push(std::path::PathBuf::from(r"..\LibreHardwareMonitor.NET.10\LibreHardwareMonitor.exe"));
+        candidate_paths.push(std::path::PathBuf::from(r".\LibreHardwareMonitor\LibreHardwareMonitor.exe"));
 
         let mut target_exe = None;
         for path in &candidate_paths {
             if path.exists() {
                 target_exe = Some(path.clone());
                 break;
-            }
-        }
-
-        if target_exe.is_none() {
-            if let Ok(current) = std::env::current_exe() {
-                if let Some(parent) = current.parent() {
-                    let p1 = parent.join("LibreHardwareMonitor.NET.10").join("LibreHardwareMonitor.exe");
-                    if p1.exists() {
-                        target_exe = Some(p1);
-                    } else {
-                        let p2 = parent.join("LibreHardwareMonitor").join("LibreHardwareMonitor.exe");
-                        if p2.exists() {
-                            target_exe = Some(p2);
-                        }
-                    }
-                }
             }
         }
 
