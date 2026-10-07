@@ -26,6 +26,10 @@ pub struct PowerRailTelemetry {
     pub total_power_w: f32,
     /// Estimated PSU load efficiency (e.g. "80 PLUS Gold").
     pub psu_rating: String,
+    /// Indicates whether voltage/power metrics are from a real physical hardware sensor (WMI).
+    pub is_sensor_real: bool,
+    /// Sensor telemetry source provider.
+    pub sensor_source: String,
     /// Internal tick counter for realistic micro-fluctuations.
     #[serde(skip)]
     pub tick: u64,
@@ -42,14 +46,55 @@ impl Default for PowerRailTelemetry {
             gpu_power_w: 24.0,
             total_power_w: 125.0,
             psu_rating: "80 PLUS Gold (Eficiência 90%)".to_string(),
+            is_sensor_real: false,
+            sensor_source: "Modelo Elétrico Estimado".to_string(),
             tick: 0,
         }
     }
 }
 
 impl PowerRailTelemetry {
-    /// Updates voltages and power metrics dynamically in real time based on live CPU and GPU load.
-    pub fn update_live_metrics(&mut self, cpu_load_pct: f32, gpu_load_pct: f32, avg_cpu_freq_mhz: f32) {
+    /// Updates voltages and power metrics dynamically in real time from WMI or realistic electrical model.
+    pub fn update_live_metrics(
+        &mut self,
+        cpu_load_pct: f32,
+        gpu_load_pct: f32,
+        avg_cpu_freq_mhz: f32,
+        wmi_sensors: &crate::hardware::wmi_sensors::WmiHardwareSensors,
+    ) {
+        if wmi_sensors.is_available
+            && (wmi_sensors.voltage_12v.is_some()
+                || wmi_sensors.vcore.is_some()
+                || wmi_sensors.cpu_power_w.is_some())
+        {
+            self.is_sensor_real = true;
+            self.sensor_source.clone_from(&wmi_sensors.provider_name);
+
+            if let Some(v12) = wmi_sensors.voltage_12v {
+                self.voltage_12v = v12;
+            }
+            if let Some(v5) = wmi_sensors.voltage_5v {
+                self.voltage_5v = v5;
+            }
+            if let Some(v33) = wmi_sensors.voltage_3v3 {
+                self.voltage_3v3 = v33;
+            }
+            if let Some(vc) = wmi_sensors.vcore {
+                self.vcore = vc;
+            }
+            if let Some(cp) = wmi_sensors.cpu_power_w {
+                self.cpu_power_w = cp;
+            }
+            if let Some(gp) = wmi_sensors.gpu_power_w {
+                self.gpu_power_w = gp;
+            }
+            self.total_power_w = self.cpu_power_w + self.gpu_power_w + 35.0;
+            return;
+        }
+
+        self.is_sensor_real = false;
+        self.sensor_source = "Modelo Elétrico Estimado".to_string();
+
         self.tick = self.tick.wrapping_add(1);
         let cpu_frac = (cpu_load_pct / 100.0).clamp(0.0, 1.0);
         let gpu_frac = (gpu_load_pct / 100.0).clamp(0.0, 1.0);

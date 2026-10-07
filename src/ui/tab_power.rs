@@ -38,6 +38,16 @@ pub fn render(
         theme.card_frame().show(ui, |ui| {
             section_header(ui, theme, "⚡", "Monitoramento de Linhas de Tensão da Fonte (PSU)");
 
+            ui.horizontal(|ui| {
+                if rails.is_sensor_real {
+                    ui.label(RichText::new(format!("🟢 Sensores Reais WMI Ativos ({})", rails.sensor_source)).color(theme.color_success()).strong().size(12.0));
+                } else {
+                    ui.label(RichText::new("🟡 Modo Estimado").color(theme.color_warning()).strong().size(12.0));
+                    ui.label(RichText::new("• Dica: Inicie o LibreHardwareMonitor em segundo plano para leitura direta dos sensores físicos").color(theme.text_secondary()).size(11.5));
+                }
+            });
+            ui.add_space(6.0);
+
             ui.columns(4, |cols| {
                 cols[0].vertical(|ui| {
                     let v12_text = format!("{:.3} V", rails.voltage_12v);

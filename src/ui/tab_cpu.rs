@@ -58,6 +58,16 @@ pub fn render(ui: &mut Ui, theme: AppTheme, hardware: &SystemHardware) {
         theme.card_frame().show(ui, |ui| {
             section_header(ui, theme, "🌡", "Sensores Térmicos & Ventoinha do Cooler");
 
+            ui.horizontal(|ui| {
+                if hardware.cpu.live.is_temp_real {
+                    ui.label(RichText::new(format!("🟢 Sensor Físico Real Ativo ({})", hardware.cpu.live.sensor_source)).color(theme.color_success()).strong().size(12.0));
+                } else {
+                    ui.label(RichText::new("🟡 Estimativa Térmica Dinâmica").color(theme.color_warning()).strong().size(12.0));
+                    ui.label(RichText::new("• Dica: Inicie o LibreHardwareMonitor para leitura dos sensores físicos").color(theme.text_secondary()).size(11.5));
+                }
+            });
+            ui.add_space(6.0);
+
             ui.columns(4, |cols| {
                 cols[0].vertical(|ui| {
                     let temp_text = format!("{:.1} °C", hardware.cpu.live.cpu_temp_c);

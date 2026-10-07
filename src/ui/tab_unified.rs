@@ -39,7 +39,12 @@ pub fn render(ui: &mut Ui, theme: AppTheme, hardware: &SystemHardware) {
                 });
                 cols[1].vertical(|ui| {
                     let temp_text = format!("{:.1} °C", hardware.cpu.live.cpu_temp_c);
-                    stat_metric_box(ui, theme, "Temperatura CPU", &temp_text, &format!("{} RPM Ventoinha", hardware.cpu.live.fan_speed_rpm));
+                    let sub = if hardware.cpu.live.is_temp_real {
+                        format!("{} RPM (Sensor Real)", hardware.cpu.live.fan_speed_rpm)
+                    } else {
+                        format!("{} RPM (Estimado)", hardware.cpu.live.fan_speed_rpm)
+                    };
+                    stat_metric_box(ui, theme, "Temperatura CPU", &temp_text, &sub);
                 });
                 cols[2].vertical(|ui| {
                     let used_gb = (hardware.memory.live.used_mb as f32) / 1024.0;

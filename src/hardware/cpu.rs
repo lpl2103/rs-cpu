@@ -42,6 +42,12 @@ pub struct CpuLiveMetrics {
     pub cpu_temp_c: f32,
     /// CPU Cooler Fan speed in RPM.
     pub fan_speed_rpm: u32,
+    /// Indicates whether temperature reading is from a physical sensor.
+    pub is_temp_real: bool,
+    /// Indicates whether fan speed reading is from a physical sensor.
+    pub is_fan_real: bool,
+    /// Telemetry sensor provider name.
+    pub sensor_source: String,
 }
 
 /// Static and architectural information about the processor.
@@ -154,12 +160,17 @@ impl CpuInfo {
             live: CpuLiveMetrics::default(),
         };
 
-        cpu_info.update_live_metrics(system, components);
+        cpu_info.update_live_metrics(system, components, &crate::hardware::wmi_sensors::WmiHardwareSensors::default());
         cpu_info
     }
 
-    /// Updates live frequency, temperature, fan, and load metrics from the refreshed system state.
-    pub fn update_live_metrics(&mut self, system: &System, components: &Components) {
+    /// Updates live frequency, temperature, fan, and load metrics from refreshed system state and WMI sensors.
+    pub fn update_live_metrics(
+        &mut self,
+        system: &System,
+        components: &Components,
+        wmi_sensors: &crate::hardware::wmi_sensors::WmiHardwareSensors,
+    ) {
         let cpus = system.cpus();
         if cpus.is_empty() {
             return;
@@ -186,41 +197,61 @@ impl CpuInfo {
             0.0
         };
 
-        // Detect CPU temperature from sensors without heap allocations
-        let mut cpu_temp: f32 = 0.0;
-        let mut temp_count = 0;
-        for component in components {
-            let label = component.label();
-            let is_cpu = label.split(|c: char| !c.is_alphanumeric()).any(|part| {
-                part.eq_ignore_ascii_case("cpu")
-                    || part.eq_ignore_ascii_case("core")
-                    || part.eq_ignore_ascii_case("package")
-                    || part.eq_ignore_ascii_case("tctl")
-                    || part.eq_ignore_ascii_case("tdie")
-            });
-            if is_cpu {
-                if let Some(t) = component.temperature() {
-                    if t > 0.0 && t < 125.0 {
-                        cpu_temp += t;
-                        temp_count += 1;
+        // 1. Try real physical sensor from LibreHardwareMonitor / OpenHardwareMonitor / ACPI via WMI
+        let (final_temp, is_temp_real, sensor_source) = if wmi_sensors.is_available && wmi_sensors.cpu_temp_c.is_some() {
+            (
+                wmi_sensors.cpu_temp_c.unwrap_or(40.0),
+                true,
+                wmi_sensors.provider_name.clone(),
+            )
+        } else {
+            // 2. Try native OS sensors from sysinfo::Components
+            let mut cpu_temp: f32 = 0.0;
+            let mut temp_count = 0;
+            for component in components {
+                let label = component.label();
+                let is_cpu = label.split(|c: char| !c.is_alphanumeric()).any(|part| {
+                    part.eq_ignore_ascii_case("cpu")
+                        || part.eq_ignore_ascii_case("core")
+                        || part.eq_ignore_ascii_case("package")
+                        || part.eq_ignore_ascii_case("tctl")
+                        || part.eq_ignore_ascii_case("tdie")
+                });
+                if is_cpu {
+                    if let Some(t) = component.temperature() {
+                        if t > 0.0 && t < 125.0 {
+                            cpu_temp += t;
+                            temp_count += 1;
+                        }
                     }
                 }
             }
-        }
 
-        let final_temp = if temp_count > 0 {
-            cpu_temp / temp_count as f32
-        } else {
-            // Realistic temperature estimation based on load if sensor access is restricted
-            let load_ratio = (system.global_cpu_usage() / 100.0).clamp(0.0, 1.0);
-            38.0 + (load_ratio * 34.0)
+            if temp_count > 0 {
+                (
+                    cpu_temp / temp_count as f32,
+                    true,
+                    "Sensor Nativo do SO".to_string(),
+                )
+            } else {
+                // 3. Fallback to realistic load-dependent estimation
+                let load_ratio = (system.global_cpu_usage() / 100.0).clamp(0.0, 1.0);
+                (
+                    38.0 + (load_ratio * 34.0),
+                    false,
+                    "Estimativa Térmica Dinâmica".to_string(),
+                )
+            }
         };
 
-        // Realistic fan speed estimation based on thermal profile (RPM)
-        let fan_rpm = {
-            let temp_factor = ((final_temp - 35.0) / 45.0).clamp(0.0, 1.0);
-            (850.0 + (temp_factor * 1150.0)) as u32
-        };
+        // Fan RPM: Real WMI reading if available, otherwise thermal curve estimation
+        let (fan_rpm, is_fan_real) = wmi_sensors.cpu_fan_rpm.map_or_else(
+            || {
+                let temp_factor = ((final_temp - 35.0) / 45.0).clamp(0.0, 1.0);
+                ((850.0 + (temp_factor * 1150.0)) as u32, false)
+            },
+            |real_rpm| (real_rpm, true),
+        );
 
         self.live.global_load_pct = system.global_cpu_usage();
         self.live.avg_frequency_mhz = avg_freq;
@@ -228,6 +259,9 @@ impl CpuInfo {
         self.live.multiplier = multiplier;
         self.live.cpu_temp_c = final_temp;
         self.live.fan_speed_rpm = fan_rpm;
+        self.live.is_temp_real = is_temp_real;
+        self.live.is_fan_real = is_fan_real;
+        self.live.sensor_source = sensor_source;
     }
 }
 
