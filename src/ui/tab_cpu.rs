@@ -6,7 +6,12 @@ use crate::hardware::SystemHardware;
 use eframe::egui::{RichText, ScrollArea, Ui};
 
 /// Renders the dedicated detailed CPU tab in Portuguese (PT-BR).
-pub fn render(ui: &mut Ui, theme: AppTheme, hardware: &SystemHardware) {
+pub fn render(
+    ui: &mut Ui,
+    theme: AppTheme,
+    hardware: &SystemHardware,
+    installer: &crate::hardware::LhmInstaller,
+) {
     ScrollArea::vertical().show(ui, |ui| {
         ui.add_space(4.0);
 
@@ -63,7 +68,13 @@ pub fn render(ui: &mut Ui, theme: AppTheme, hardware: &SystemHardware) {
                     ui.label(RichText::new(format!("🟢 Sensor Físico Real Ativo ({})", hardware.cpu.live.sensor_source)).color(theme.color_success()).strong().size(12.0));
                 } else {
                     ui.label(RichText::new("🟡 Estimativa Térmica Dinâmica").color(theme.color_warning()).strong().size(12.0));
-                    ui.label(RichText::new("• Dica: Inicie o LibreHardwareMonitor para leitura dos sensores físicos").color(theme.text_secondary()).size(11.5));
+                    ui.label(RichText::new("• Dica: Ative o LibreHardwareMonitor para leitura dos sensores físicos").color(theme.text_secondary()).size(11.5));
+                    if installer.is_busy() {
+                        ui.spinner();
+                        ui.label(RichText::new("Instalando...").color(theme.accent_primary()).size(11.5));
+                    } else if ui.button(RichText::new("📥 Baixar e Ativar Sensores").size(11.5)).clicked() {
+                        installer.start_installation();
+                    }
                 }
             });
             ui.add_space(6.0);

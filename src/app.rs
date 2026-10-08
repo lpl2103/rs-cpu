@@ -55,6 +55,8 @@ pub struct RsCpuApp {
     pub graphics_state: GraphicsTabState,
     /// About tab state.
     pub about_state: AboutTabState,
+    /// `LibreHardwareMonitor` installer manager.
+    pub installer: crate::hardware::LhmInstaller,
     /// Timestamp of last telemetry update.
     pub last_update: Instant,
     /// Cached last applied theme to avoid redundant recomputations.
@@ -137,6 +139,7 @@ impl RsCpuApp {
             storage_state: StorageTabState::default(),
             graphics_state: GraphicsTabState::default(),
             about_state: AboutTabState::default(),
+            installer: crate::hardware::LhmInstaller::new(),
             last_update: Instant::now(),
             last_applied_theme: None,
             last_applied_zoom: 1.0,
@@ -157,6 +160,9 @@ impl eframe::App for RsCpuApp {
 
         // Periodic non-blocking telemetry refresh (every 500ms)
         if self.last_update.elapsed() >= Duration::from_millis(500) {
+            if self.installer.check_and_clear_success() {
+                let _ = self.engine.wmi_engine.restart_sidecar();
+            }
             self.engine.refresh_live_metrics();
             self.last_update = Instant::now();
         }
@@ -303,7 +309,7 @@ impl eframe::App for RsCpuApp {
                     tab_unified::render(ui, self.theme, &self.engine.data);
                 }
                 ActiveTab::Cpu => {
-                    tab_cpu::render(ui, self.theme, &self.engine.data);
+                    tab_cpu::render(ui, self.theme, &self.engine.data, &self.installer);
                 }
                 ActiveTab::Mainboard => {
                     tab_mainboard::render(ui, self.theme, &self.engine.data);
@@ -318,13 +324,13 @@ impl eframe::App for RsCpuApp {
                     tab_graphics::render(ui, self.theme, &self.engine.data, &mut self.graphics_state);
                 }
                 ActiveTab::Power => {
-                    tab_power::render(ui, self.theme, &self.engine.data, &mut self.power_stress);
+                    tab_power::render(ui, self.theme, &self.engine.data, &mut self.power_stress, &self.installer);
                 }
                 ActiveTab::Bench => {
                     tab_bench::render(ui, self.theme, &self.engine.data, &mut self.bench);
                 }
                 ActiveTab::About => {
-                    tab_about::render(ui, self.theme, &self.engine.data, &mut self.about_state);
+                    tab_about::render(ui, self.theme, &self.engine.data, &mut self.about_state, &self.installer);
                 }
             });
 

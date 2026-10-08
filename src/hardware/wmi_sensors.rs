@@ -96,6 +96,22 @@ impl SidecarProcess {
         candidate_paths.push(std::path::PathBuf::from(r"..\LibreHardwareMonitor.NET.10\LibreHardwareMonitor.exe"));
         candidate_paths.push(std::path::PathBuf::from(r".\LibreHardwareMonitor\LibreHardwareMonitor.exe"));
 
+        if let Ok(prog_files) = std::env::var("ProgramFiles") {
+            candidate_paths.push(std::path::PathBuf::from(prog_files).join("LibreHardwareMonitor").join("LibreHardwareMonitor.exe"));
+        }
+        if let Ok(local_app) = std::env::var("LOCALAPPDATA") {
+            candidate_paths.push(std::path::PathBuf::from(&local_app).join("Programs").join("LibreHardwareMonitor").join("LibreHardwareMonitor.exe"));
+            candidate_paths.push(std::path::PathBuf::from(&local_app).join("LibreHardwareMonitor").join("LibreHardwareMonitor.exe"));
+        }
+        if let Ok(path_var) = std::env::var("PATH") {
+            for dir in std::env::split_paths(&path_var) {
+                let p = dir.join("LibreHardwareMonitor.exe");
+                if p.exists() {
+                    candidate_paths.push(p);
+                }
+            }
+        }
+
         let mut target_exe = None;
         for path in &candidate_paths {
             if path.exists() {
@@ -146,7 +162,7 @@ impl Drop for SidecarProcess {
 pub struct WmiSensorEngine {
     data: Arc<RwLock<WmiHardwareSensors>>,
     stop_signal: Arc<AtomicBool>,
-    _sidecar: Arc<Mutex<Option<SidecarProcess>>>,
+    sidecar: Arc<Mutex<Option<SidecarProcess>>>,
 }
 
 impl Default for WmiSensorEngine {
@@ -185,7 +201,7 @@ impl WmiSensorEngine {
         Self {
             data,
             stop_signal,
-            _sidecar: sidecar,
+            sidecar,
         }
     }
 
@@ -193,6 +209,15 @@ impl WmiSensorEngine {
     #[must_use]
     pub fn get_latest(&self) -> WmiHardwareSensors {
         self.data.read().as_deref().cloned().unwrap_or_default()
+    }
+
+    /// Restarts or launches the sidecar process if not running.
+    #[must_use]
+    pub fn restart_sidecar(&self) -> bool {
+        self.sidecar.lock().is_ok_and(|mut lock| {
+            *lock = SidecarProcess::try_spawn();
+            lock.is_some()
+        })
     }
 }
 

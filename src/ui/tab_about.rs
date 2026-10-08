@@ -20,6 +20,7 @@ pub fn render(
     theme: AppTheme,
     hardware: &SystemHardware,
     state: &mut AboutTabState,
+    installer: &crate::hardware::LhmInstaller,
 ) {
     ScrollArea::vertical().show(ui, |ui| {
         ui.add_space(4.0);
@@ -184,6 +185,92 @@ pub fn render(
                         .color(if is_error { theme.color_error() } else { theme.color_success() })
                         .strong(),
                 );
+            }
+        });
+
+        ui.add_space(8.0);
+
+        // Telemetria Física & Integração LibreHardwareMonitor
+        theme.card_frame().show(ui, |ui| {
+            section_header(ui, theme, "🛠", "Telemetria Física & Integração LibreHardwareMonitor");
+
+            let is_real = hardware.cpu.live.is_temp_real;
+            let status = installer.get_status();
+
+            if is_real {
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new("🟢 Telemetria de Hardware Ring-0 Ativa").color(theme.color_success()).strong().size(13.5));
+                    ui.label(RichText::new(format!("({})", hardware.cpu.live.sensor_source)).color(theme.text_secondary()).size(12.0));
+                });
+                ui.add_space(4.0);
+                ui.label(
+                    RichText::new("Os sensores físicos de temperatura, ventoinhas e linhas da fonte estão conectados e sendo lidos via LibreHardwareMonitor.")
+                        .size(12.5)
+                        .color(theme.text_secondary()),
+                );
+            } else {
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new("🟡 Modo Estimado (Sensores Físicos Não Detectados)").color(theme.color_warning()).strong().size(13.5));
+                });
+                ui.add_space(4.0);
+                ui.label(
+                    RichText::new("Você pode instalar o LibreHardwareMonitor automaticamente com um clique. O aplicativo baixará a release oficial do GitHub, descompactará no diretório de programas e adicionará a pasta ao PATH do Windows para leitura em segundo plano.")
+                        .size(12.5)
+                        .color(theme.text_secondary()),
+                );
+            }
+
+            ui.add_space(8.0);
+
+            ui.horizontal(|ui| {
+                if installer.is_busy() {
+                    ui.spinner();
+                    match status {
+                        crate::hardware::InstallerStatus::Downloading => {
+                            ui.label(RichText::new("⬇️ Baixando release oficial do GitHub (LibreHardwareMonitor.zip)...").color(theme.accent_primary()).strong());
+                        }
+                        crate::hardware::InstallerStatus::Extracting => {
+                            ui.label(RichText::new("📦 Extraindo arquivos para o diretório de programas...").color(theme.accent_primary()).strong());
+                        }
+                        crate::hardware::InstallerStatus::Configuring => {
+                            ui.label(RichText::new("⚙️ Configurando inicialização headless e servidor local...").color(theme.accent_primary()).strong());
+                        }
+                        crate::hardware::InstallerStatus::AddingToPath => {
+                            ui.label(RichText::new("🌐 Registrando pasta no PATH do Windows...").color(theme.accent_primary()).strong());
+                        }
+                        _ => {
+                            ui.label(RichText::new("⏳ Processando instalação...").color(theme.accent_primary()).strong());
+                        }
+                    }
+                } else {
+                    let btn_text = if is_real {
+                        "🔄 Reinstalar / Atualizar no PATH"
+                    } else {
+                        "📥 Baixar, Instalar e Adicionar ao PATH do Windows"
+                    };
+
+                    if ui
+                        .add(
+                            Button::new(RichText::new(btn_text).strong().size(13.0))
+                                .min_size(egui::vec2(280.0, 34.0)),
+                        )
+                        .clicked()
+                    {
+                        installer.start_installation();
+                    }
+                }
+            });
+
+            match &status {
+                crate::hardware::InstallerStatus::Success(msg) => {
+                    ui.add_space(6.0);
+                    ui.label(RichText::new(format!("✅ {msg}")).color(theme.color_success()).strong().size(12.5));
+                }
+                crate::hardware::InstallerStatus::Error(err) => {
+                    ui.add_space(6.0);
+                    ui.label(RichText::new(format!("❌ Erro na instalação: {err}")).color(theme.color_error()).strong().size(12.5));
+                }
+                _ => {}
             }
         });
 

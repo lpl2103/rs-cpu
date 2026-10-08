@@ -2,6 +2,7 @@
 
 pub mod cpu;
 pub mod gpu;
+pub mod lhm_installer;
 pub mod memory;
 pub mod motherboard;
 pub mod power;
@@ -10,6 +11,7 @@ pub mod wmi_sensors;
 
 pub use cpu::{CacheInfo, CpuInfo, CpuLiveMetrics};
 pub use gpu::GpuInfo;
+pub use lhm_installer::{InstallerStatus, LhmInstaller};
 pub use memory::{
     MemoryInfo, MemoryLiveMetrics, RamStressManager, RamStressResult, RamStressStatus, SpdSlotInfo,
     TimingProfile,

@@ -22,6 +22,7 @@ pub fn render(
     theme: AppTheme,
     hardware: &SystemHardware,
     stress: &mut PowerStressManager,
+    installer: &crate::hardware::LhmInstaller,
 ) {
     let current_state = stress.state.lock().map_or(PowerTestState::Idle, |s| s.clone());
     let is_running = matches!(current_state, PowerTestState::Running { .. });
@@ -43,7 +44,13 @@ pub fn render(
                     ui.label(RichText::new(format!("🟢 Sensores Reais WMI Ativos ({})", rails.sensor_source)).color(theme.color_success()).strong().size(12.0));
                 } else {
                     ui.label(RichText::new("🟡 Modo Estimado").color(theme.color_warning()).strong().size(12.0));
-                    ui.label(RichText::new("• Dica: Inicie o LibreHardwareMonitor em segundo plano para leitura direta dos sensores físicos").color(theme.text_secondary()).size(11.5));
+                    ui.label(RichText::new("• Dica: Ative o LibreHardwareMonitor para leitura direta dos sensores físicos").color(theme.text_secondary()).size(11.5));
+                    if installer.is_busy() {
+                        ui.spinner();
+                        ui.label(RichText::new("Instalando...").color(theme.accent_primary()).size(11.5));
+                    } else if ui.button(RichText::new("📥 Baixar e Ativar Sensores").size(11.5)).clicked() {
+                        installer.start_installation();
+                    }
                 }
             });
             ui.add_space(6.0);
